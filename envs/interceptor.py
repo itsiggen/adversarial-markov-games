@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torchvision import datasets, transforms
 from foolbox import PyTorchModel, accuracy, samples
-from foolbox.attacks import BoundaryAttack, HopSkipJump
+from envs import BoundaryStep
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import MisdirectedMisclassification, l2
 from models.trainMNISTtorch import Net
@@ -21,7 +21,7 @@ class interceptor(gym.Env):
     """
     metadata = {'render.modes': ['console']}
 
-    def __init__(self):
+    def __init__(self, epsilon = 3):
         super().__init__()
         
         self.interceptors = 1
@@ -38,9 +38,7 @@ class interceptor(gym.Env):
         self.model.load_state_dict(torch.load('models/mnist_cnn.pt'))
         self.model.eval()
         
-        # Create Foolbox model 
-        self.fmodel = PyTorchAdaptive(self.model, bounds=(0, 1))
-        
+        self.epsilon = epsilon
         self.ready = False
         self.reward = 0
         self.done = False
@@ -61,28 +59,11 @@ class interceptor(gym.Env):
         criterion = TargetedMisclassification(torch.tensor([originLabel]))
         misterion = MisdirectedMisclassification(torch.tensor([originLabel]))
 
-        self.attack = BoundaryAttack(steps=20000)
-        epsilon = 3
-        advs, _, success = self.attack(self.fmodel,
-                                       wantedImgAttack[0].unsqueeze(1),
-                                       criterion,
-                                       misterion,
-                                       epsilons = epsilon,
-                                       starting_points = startImgAttack[0].unsqueeze(1)
-                                       )
+        self.attack = BoundaryStep(steps=20000)
+        self.attack.reset(self.model, self.sub, originImg, criterion, misterion, startImg)      
         
-       
-        
-        a = self.fmodel(advs[0])
-        print(a)
-
-
-        self.rewards = {i: 0 for i in self.agents}
-        self.dones = {i: False for i in self.agents}
-
-        # selects the first agent
-        self.agent_selection = self._agent_selector.reset()
-
+        self.rewards = 0
+        self.done = False
 
     # Action is a value from 0 to 2, indicating the interceptor response
     def step(self, action):
