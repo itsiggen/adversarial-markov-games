@@ -1,4 +1,3 @@
-import warnings
 import random
 import gym
 from gym import spaces
@@ -6,13 +5,11 @@ import eagerpy as ep
 import numpy as np
 import torch
 from torchvision import datasets, transforms
-from foolbox import PyTorchModel, accuracy, samples
-from envs import BoundaryStep
+from envs.boundary_step import BoundaryStep
 from foolbox.criteria import TargetedMisclassification
-from utils.utils import MisdirectedMisclassification, l2
+from utils.utils import MisdirectedMisclassification, l2, skl_callable
 from models.trainMNISTtorch import Net
-from syncopation import PyTorchAdaptive
-import matplotlib.pyplot as plt
+from joblib import load
 
 
 class interceptor(gym.Env):
@@ -31,26 +28,21 @@ class interceptor(gym.Env):
         # Observation space is the MNIST inputs
         self.observation_space_int = spaces.Box(low=0, high=1, shape=(28, 28), dtype=np.float32)
 
-        # Load MNIST model
+        # Load MNIST pytorch CNN model -- 99.1% acc
         transform=transforms.ToTensor()
         self.dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
         self.model = Net()
         self.model.load_state_dict(torch.load('models/mnist_cnn.pt'))
         self.model.eval()
         
+        # Load MNIST sklearn RF model -- 97.1% acc
+        clf = load('models/RF.joblib')
+        self.sub = skl_callable(clf)
+        
         self.epsilon = epsilon
         self.ready = False
         self.reward = 0
         self.done = False
-
-    def observe(self, agent):
-        board_vals = np.array(self.board.squares).reshape(3, 3)
-        cur_player = self.agents.index(self.agent_selection)
-        opp_player = (cur_player + 1) % 2
-
-        cur_p_board = np.equal(board_vals, cur_player + 1)
-        opp_p_board = np.equal(board_vals, opp_player + 1)
-        return np.stack([cur_p_board, opp_p_board], axis=2).astype(np.int8)
     
     def reset(self):
         """At reset, initialize a new targeted attack
@@ -60,7 +52,10 @@ class interceptor(gym.Env):
         misterion = MisdirectedMisclassification(torch.tensor([originLabel]))
 
         self.attack = BoundaryStep(steps=20000)
-        self.attack.reset(self.model, self.sub, originImg, criterion, misterion, startImg)      
+        self.attack.reset(self.model, self.sub, originImg, criterion, misterion, startImg)   
+        
+        # Get the first query
+        _, response = self.attack.step(0)
         
         self.rewards = 0
         self.done = False
@@ -78,9 +73,6 @@ class interceptor(gym.Env):
         observation = self.gen_observation()
 
         reward = self.reward(1)
-
-        # Return current agent
-        info = self.agent_selection
 
         return observation, reward, done, info
 

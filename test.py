@@ -11,11 +11,12 @@ from models.trainMNISTtorch import Net
 import matplotlib.pyplot as plt
 import time
 import sys
+from envs.interceptor import interceptor
 
 # instantiate a MNIST model
 transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False,
-                       transform=transform, download=True)
+                        transform=transform, download=True)
 
 model = Net()
 model.load_state_dict(torch.load('models/mnist_cnn.pt'))
@@ -31,3 +32,5 @@ b = ep.argmax(a).detach().numpy()
 c = startImgAttack[1]
 
 a == c
+
+# a = interceptor()

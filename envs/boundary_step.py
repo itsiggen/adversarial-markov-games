@@ -1,6 +1,6 @@
 import eagerpy as ep
 from typing import Union, Tuple, Optional, Any
-from tensorboard import TensorBoard
+from foolbox.tensorboard import TensorBoard
 from foolbox.attacks import BoundaryAttack
 
 class BoundaryStep(BoundaryAttack):

@@ -8,6 +8,15 @@ import torch
 
 T = TypeVar("T")
 
+class skl_callable():
+    """Wraps a scikit learn model into a callable
+    """
+    def __init__(self, model):
+        self.model = model
+    
+    def __call__(self, sample):
+        return self.model.predict_proba(sample.reshape(1, -1))
+
 class MisdirectedMisclassification(Criterion):
     """Targeted misclassification with a twist, the returned class
     is the second highest.
