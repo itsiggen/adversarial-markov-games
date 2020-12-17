@@ -74,7 +74,7 @@ class interceptor(gym.Env):
 
         reward = self.reward(1)
 
-        return observation, reward, done, info
+        return observation, reward, done
 
     def get_pair(self):
         startImgNr = random.randint(0,10000)

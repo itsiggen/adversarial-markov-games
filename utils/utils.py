@@ -40,6 +40,27 @@ class MisdirectedMisclassification(Criterion):
         is_adv = classes == self.target_classes
         return restore_type(is_adv)
     
+class iskl_adversarial(Criterion):
+    """Targeted misclassification for sklearn models
+    """
+
+    def __init__(self, target_classes, model):
+        super().__init__()
+        self.target_classes = target_classes
+        self.model = model
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.target_classes!r})"
+
+    def __call__(self, perturbed):
+        perturbed = perturbed.reshape(1, -1)
+        print(perturbed)
+        classes = self.model.predict(perturbed.numpy())
+        print(classes)
+        print(self.target_classes)
+        is_adv = bool(classes == self.target_classes)
+        return is_adv
+
 def flatten(x: ep.Tensor, keep: int = 1) -> ep.Tensor:
     return x.flatten(start=keep)
 

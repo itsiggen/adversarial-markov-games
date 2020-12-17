@@ -45,12 +45,12 @@ dataset = datasets.MNIST('./data', train=True,
 x_train = dataset.data.view(60000,784)
 y_train = dataset.targets
 
-print(x_train.shape)
+# print(x_train.shape)
 
-clf = RandomForestClassifier(n_estimators=200, n_jobs=-1)
-print("start training RFC")
-clf.fit(x_train, y_train)
-dump(clf, 'RF.joblib')
+# clf = RandomForestClassifier(n_estimators=200, n_jobs=-1)
+# print("start training RFC")
+# clf.fit(x_train, y_train)
+# dump(clf, 'RF.joblib')
 
 clf = load('RF.joblib')
 
