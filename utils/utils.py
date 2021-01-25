@@ -54,11 +54,11 @@ class iskl_adversarial(Criterion):
 
     def __call__(self, perturbed):
         perturbed = perturbed.reshape(1, -1)
-        print(perturbed)
+        # print(perturbed)
         classes = self.model.predict(perturbed.numpy())
-        print(classes)
-        print(self.target_classes)
-        is_adv = bool(classes == self.target_classes)
+        # print(classes)
+        # print(self.target_classes)
+        is_adv = [bool(classes == self.target_classes)]
         return is_adv
 
 def flatten(x: ep.Tensor, keep: int = 1) -> ep.Tensor:

@@ -4,27 +4,45 @@ import gym
 import torch
 import random
 from torchvision import datasets, transforms
-from typing import Union, Tuple, Optional, Any
 from foolbox import PyTorchModel
 from foolbox.tensorboard import TensorBoard
 from foolbox.attacks import BoundaryAttack
 from foolbox.attacks.boundary_attack import ArrayQueue, draw_proposals
 from foolbox.attacks.base import get_is_adversarial
+from foolbox.distances import l2
 from gym import error, spaces, utils
-from gym.utils import seeding
-from gym.envs.registration import register
 from utils.buckets import Buckets
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import MisdirectedMisclassification, iskl_adversarial
 from utils.utils import flatten, atleast_kd
 from models.trainMNISTtorch import Net
 from joblib import load
+import matplotlib.pyplot as plt
 import math
 
+random.seed(2)
+
 class BoundaryStep(gym.Env):
-    def __init__(self, logdir='/logs'):
+    def __init__(
+        self,
+        steps: int = 5000,
+        spherical_step: float = 1e-2,
+        source_step: float = 1e-2,
+        source_step_convergance: float = 1e-7,
+        step_adaptation: float = 1.5,
+        tensorboard = False,
+        update_stats_every_k: int = 10
+        ):
         super(BoundaryStep, self).__init__()
-        self.buckets = Buckets(nrBuckets=10)
+        
+        # Boundary Attack inits
+        self.steps = steps
+        self.spherical_step = spherical_step
+        self.source_step = source_step
+        self.source_step_convergance = source_step_convergance
+        self.step_adaptation = step_adaptation
+        self.tensorboard = tensorboard
+        self.update_stats_every_k = update_stats_every_k
         
         # Actions controlled by the interceptor
         self.action_space = spaces.Discrete(3)
@@ -42,24 +60,28 @@ class BoundaryStep(gym.Env):
         # Load MNIST sklearn RF model -- 97.1% acc
         self.sub = load('models/RF.joblib')
         
-        self.actions = [0, 0, 0]
+        self.buckets = Buckets(nrBuckets=10)
+        self.avg_r = 0
         self.done = False
-        self.logdir = logdir
         
-    def reset(self, early_stop: Optional[float] = None):
-        self.attack = BoundaryAttack()
-        self.tb = TensorBoard(logdir=self.logdir)
-        self.early_stop = early_stop
-        self.starting_point, self.wanted_point, startLabel = self.get_pair()
+    def reset(self):
+        # self.attack = BoundaryAttack()
+        self.tb = TensorBoard(logdir=self.tensorboard)
+        self.epsilon = 2
+        self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         self.starting_point, _ = ep.astensor_(self.starting_point)
         print("Start label:", startLabel)
+        print("Wanted label:", originLabel)
         # check for correcteness in how to supply the startLabel
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         self.misterion = MisdirectedMisclassification(torch.tensor([startLabel]))
         self.sklerion = iskl_adversarial([startLabel], self.sub)
         self.originals, self.restore_type = ep.astensor_(self.wanted_point)
         self.iter = 0
+        self.r = 0
+        self.actions = [0, 0, 0]
         self.done = False
+        self.success = False
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         self.mis_adversarial = get_is_adversarial(self.misterion, self.model)
@@ -75,11 +97,11 @@ class BoundaryStep(gym.Env):
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
 
-        self.N = len(self.originals)
+        self.N = len(self.originals) # must be 1 as we perform 1 attack at a time
         self.ndim = self.originals.ndim
         self.bounds = self.model.bounds
-        self.spherical_steps = ep.ones(self.originals, self.N) * self.attack.spherical_step
-        self.source_steps = ep.ones(self.originals, self.N) * self.attack.source_step
+        self.spherical_steps = ep.ones(self.originals, self.N) * self.spherical_step
+        self.source_steps = ep.ones(self.originals, self.N) * self.source_step
         self.unnormalized_source_directions = self.originals - self.best_advs
         self.source_norms = ep.norms.l2(flatten(self.unnormalized_source_directions), axis=-1)
         self.source_directions = self.unnormalized_source_directions / atleast_kd(self.source_norms, self.ndim)
@@ -106,39 +128,22 @@ class BoundaryStep(gym.Env):
     def step(self, actionID):
         #TODO: throw some benign related queries and evaluate over different ratios of collisions
         self.iter += 1
-        self.converged = self.source_steps < self.attack.source_step_convergance
-        if self.converged or self.iter > self.attack.steps:
+        # print(self.iter)
+        self.converged = self.source_steps < self.source_step_convergance
+        # print(self.source_steps)
+        if self.converged or self.iter > self.steps:
             self.tb.close()
-            return True, self.best_advs  # pragma: no cover
+            self.done = True
         self.converged = atleast_kd(self.converged, self.ndim)
 
-        self.unnormalized_source_directions = self.originals - self.best_advs
-        self.source_norms = ep.norms.l2(flatten(self.unnormalized_source_directions), axis=-1)
-        self.source_directions = self.unnormalized_source_directions / atleast_kd(self.source_norms, self.ndim)
+        # only check spherical candidates every k+1 steps
+        self.check_spherical_and_update_stats = self.iter % (self.update_stats_every_k + 1) == 0
+        # self.return_spherical = (self.iter - 1) % self.update_stats_every_k == 0
 
-        # only check spherical candidates every k steps
-        self.check_spherical_and_update_stats = self.iter % self.attack.update_stats_every_k == 0
-        self.return_spherical = (self.iter - 1) % self.attack.update_stats_every_k == 0
-
-        if not self.check_spherical_and_update_stats:
-            # Order of query and response:
-            # Check is_adv with prev candidate, then find new candidates
-            self.is_adv = self.switch(actionID, self.candidates.raw.unsqueeze(1))
-            self.candidates, self.spherical_candidates = draw_proposals(
-                self.bounds,
-                self.originals,
-                self.best_advs,
-                self.unnormalized_source_directions,
-                self.source_directions,
-                self.source_norms,
-                self.spherical_steps,
-                self.source_steps,
-                )
-        else:
+        if self.check_spherical_and_update_stats:
             assert self.spherical_candidates is not None
             self.spherical_is_adv = self.switch(actionID, self.spherical_candidates.raw.unsqueeze(1))
-            print(self.spherical_is_adv.numpy().shape)
-            print(self.N)
+            # print(self.spherical_is_adv)
             self.stats_spherical_adversarial.append(self.spherical_is_adv)
             # TODO: algorithm: the original implementation ignores those samples
             # for which spherical is not adversarial and continues with the
@@ -148,22 +153,64 @@ class BoundaryStep(gym.Env):
             self.stats_step_adversarial.append(self.is_adv)
             self.update_stats()
             # next call is going to be source, so we return candidates
-            obs, bIndex = self.observation(actionID, self.is_adv, self.candidates)
+            obs, bIndex = self.observation(actionID, self.spherical_is_adv, self.spherical_candidates)
             r = self.reward(self.buckets.getAverageStepSizeBucket(bIndex), self.iter)
+            self.r += r
             # gym step returns: observation, reward, done, info
-            return obs, r, False, {"episode":self.iter}
+            info = {"episode_number" : self.iter,
+                    "epsilon" : self.dist,
+                    "actions" : self.actions,
+                    "success" : self.success}
+            return obs, r, self.done, info
+        else:
+            # Order of query and response:
+            # Check is_adv with prev candidate, then find new candidates
+            self.spherical_is_adv = None
+            self.is_adv = self.switch(actionID, self.candidates.raw.unsqueeze(1))
+            # self.stats_step_adversarial.append(self.is_adv)
         
         # in theory, we are closer per construction
         # but limited numerical precision might break this
         self.distances = ep.norms.l2(flatten(self.originals - self.candidates), axis=-1)
         self.closer = self.distances < self.source_norms
-        print(self.closer, self.is_adv)
+        # print(self.closer, self.is_adv)
         is_best_adv = ep.logical_and(self.is_adv, self.closer)
         is_best_adv = atleast_kd(is_best_adv, self.ndim)
-        
-        print(is_best_adv)
+        # print(is_best_adv)
+            
         cond = self.converged.logical_not().logical_and(is_best_adv)
         self.best_advs = ep.where(cond, self.candidates, self.best_advs)
+
+        # check if perturbation < eps
+        self.dist = l2(self.best_advs, self.wanted_point)
+        # dista = ep.norms.linf(flatten(self.best_advs - self.wanted_point), axis=-1)
+        is_within_eps = self.dist < self.epsilon
+        if self.iter % 100 == 0:
+            # print(is_within_eps.numpy()[0])
+            print(self.iter)
+            print(self.dist)
+        # print(dista)
+        # print(is_within_eps)
+        if is_best_adv.numpy()[0] and is_within_eps.numpy()[0]:
+            self.done = True
+            self.success = True
+            # print('success')
+        
+        self.unnormalized_source_directions = self.originals - self.best_advs
+        self.source_norms = ep.norms.l2(flatten(self.unnormalized_source_directions), axis=-1)
+        self.source_directions = self.unnormalized_source_directions / atleast_kd(self.source_norms, self.ndim)
+        
+        # Draw new proposals
+        self.candidates, self.spherical_candidates = draw_proposals(
+                self.bounds,
+                self.originals,
+                self.best_advs,
+                self.unnormalized_source_directions,
+                self.source_directions,
+                self.source_norms,
+                self.spherical_steps,
+                self.source_steps,
+                )
 
         self.tb.probability("converged", self.converged, self.iter)
         self.tb.scalar("updated_stats", self.check_spherical_and_update_stats, self.iter)
@@ -178,15 +225,27 @@ class BoundaryStep(gym.Env):
         self.tb.histogram("spherical_step", self.spherical_steps, self.iter)
         self.tb.histogram("source_step", self.source_steps, self.iter)
         
+        if self.done:
+        #     plt.imshow(self.best_advs[0].squeeze().numpy())
+        #     plt.show(block=False)
+            self.avg_r = self.r / self.steps
+            print(self.actions)
+            print(self.r / self.steps)
+        
         obs, bIndex = self.observation(actionID, self.is_adv, self.candidates)
         r = self.reward(self.buckets.getAverageStepSizeBucket(bIndex), self.iter)
+        self.r += r
         # gym step returns: observation, reward, done, info
-        return obs, r, False, {"episode":self.iter}
+        info = {"episode_number" : self.iter,
+                    "epsilon" : self.dist,
+                    "actions" : self.actions,
+                    "success" : self.success}
+        return obs, r, self.done, info
     
     def observation(self, actionID, is_adv, candidate):
         # return state based on the next candidate generated by the boundary attack
         x, restore_type = ep.astensor_(candidate)
-        print(x.raw.unsqueeze(1).shape)
+        # print(x.raw.unsqueeze(1).shape)
         is_misdirection = self.check_misdirection(actionID, is_adv)
         bucketIndex = self.buckets.addQuery(x.raw.unsqueeze(3), actionID, is_misdirection)
         state = self.buckets.getState(bucketIndex)
@@ -195,6 +254,7 @@ class BoundaryStep(gym.Env):
     
     def reward(self, averageStepsize, queryCounter):
         # reward is based on average stepsize of adversarial queries
+        
         if averageStepsize <= 0:
             print("too low average stepsize: ", averageStepsize)
             averageStepsize = 0
@@ -204,17 +264,21 @@ class BoundaryStep(gym.Env):
         else:
             #print(averageStepsize)
             r = abs(math.log(averageStepsize,10))#-queryCounter/1000
-            
+                        
         # penalize benign queries being misclassified
         # if returnedLabel != realLabel:
         #     return -5
         # else:
         #     return 0
         
+        if self.iter % 100 == 0:
+            print("step", averageStepsize)
+            print("reward", r)            
         return r
 
     def switch(self, actionID, candidates):
-        print('Action:', actionID)
+        # print('Action:', actionID)
+        actionID = 0
         if self.iter < 30:
             actionID = 0
         if actionID == 0:
@@ -226,8 +290,8 @@ class BoundaryStep(gym.Env):
         if actionID == 2:
             is_adv = self.mis_adversarial(candidates)
             self.actions[2] += 1
-        print('Is adversarial:', is_adv)
-        return ep.astensor(torch.tensor(is_adv))
+        # print('Is adversarial:', is_adv)
+        return ep.astensor(torch.as_tensor(is_adv))
     
     def check_misdirection(self, actionID, is_adv):
         # method to return if misdirection occured
@@ -245,6 +309,8 @@ class BoundaryStep(gym.Env):
         self.tb.probability("spherical_stats/full", full, self.iter)
         if full.any():
             probs = self.stats_spherical_adversarial.mean()
+            print(self.iter)
+            print(probs)
             cond1 = ep.logical_and(probs > 0.5, full)
             self.spherical_steps = ep.where(cond1, self.spherical_steps * self.step_adaptation, self.spherical_steps)
             self.source_steps = ep.where(cond1, self.source_steps * self.step_adaptation, self.source_steps)
@@ -260,6 +326,8 @@ class BoundaryStep(gym.Env):
         self.tb.probability("step_stats/full", full, self.iter)
         if full.any():
             probs = self.stats_step_adversarial.mean()
+            # print(self.iter)
+            # print(probs)
             # TODO: algorithm: changed the two values because we are currently tracking p(source_step_sucess)
             # instead of p(source_step_success | spherical_step_sucess) that was tracked before
             cond1 = ep.logical_and(probs > 0.25, full)
@@ -288,8 +356,14 @@ class BoundaryStep(gym.Env):
         startLabel = self.dataset[startImgNr][1]
         
         originImg = self.dataset[originImgNr][0]
+        originLabel = self.dataset[originImgNr][1]
         
-        return startImg, originImg, startLabel
+        # startImg = self.dataset[1][0]
+        # startLabel = self.dataset[1][1]
+        # originImg = self.dataset[3][0]
+        # originLabel = self.dataset[3][1]
+        
+        return startImg, startLabel, originImg, originLabel
         
 
 # for env in gym.envs.registry.env_specs:

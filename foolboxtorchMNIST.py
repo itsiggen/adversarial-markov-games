@@ -2,6 +2,7 @@ import eagerpy as ep
 import numpy as np
 import torch
 import torchvision.models as models
+import random
 from torchvision import datasets, transforms
 from foolbox import PyTorchModel, accuracy, samples
 from foolbox.attacks import BoundaryAttack, HopSkipJump
@@ -14,6 +15,7 @@ import sys
 
 global count
 count = 0
+random.seed(42)
 
 class PyTorchAdaptive(PyTorchModel):
     def __init__(self, *args, **kwargs):
@@ -35,7 +37,7 @@ class PyTorchAdaptive(PyTorchModel):
         self.calls += 1
         # if self.calls == 100:
         #     sys.exit()
-        print(self.calls)
+        # print(self.calls)
         # print(z.raw)
         return restore_type(z)
 
@@ -55,9 +57,10 @@ model = Net()
 model.load_state_dict(torch.load('models/mnist_cnn.pt'))
 model.eval()
 
+# fmodel = PyTorchAdaptive(model, bounds=(0, 1))
 fmodel = PyTorchAdaptive(model, bounds=(0, 1))
 startImgAttack = dataset[1]
-wantedImgAttack = dataset[2]
+wantedImgAttack = dataset[3]
 # plt.imshow(startImgAttack[0].squeeze().numpy())
 criterion = TargetedMisclassification(torch.tensor([2]))
 
@@ -67,7 +70,7 @@ criterion = TargetedMisclassification(torch.tensor([2]))
 # print(wantedImgAttack[0])
 
 # attack = HopSkipJump(steps=64)
-attack = BoundaryAttack(steps=50000)
+attack = BoundaryAttack(steps=10000)
 epsilons = [0.3, 1, 3, 10]
 advs, _, success = attack(fmodel, wantedImgAttack[0].unsqueeze(1), criterion, epsilons = epsilons, starting_points = startImgAttack[0].unsqueeze(1))
 print(success)
