@@ -38,48 +38,50 @@ from joblib import dump, load
 
 # a == c
 
-transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=True,
-                        transform=transform, download=True)
+# transform=transforms.ToTensor()
+# dataset = datasets.MNIST('./data', train=True,
+#                         transform=transform, download=True)
 
-x_train = dataset.data.view(60000,784)
-y_train = dataset.targets
+# x_train = dataset.data.view(60000,784)
+# y_train = dataset.targets
 
-# print(x_train.shape)
+# # print(x_train.shape)
 
-# clf = RandomForestClassifier(n_estimators=200, n_jobs=-1)
-# print("start training RFC")
-# clf.fit(x_train, y_train)
-# dump(clf, 'RF.joblib')
+# # clf = RandomForestClassifier(n_estimators=200, n_jobs=-1)
+# # print("start training RFC")
+# # clf.fit(x_train, y_train)
+# # dump(clf, 'RF.joblib')
 
-clf = load('RF.joblib')
+# clf = load('RF.joblib')
 
-testset = datasets.MNIST('./data', train=False,
-                       transform=transform)
+# testset = datasets.MNIST('./data', train=False,
+#                        transform=transform)
         
-x_test = testset.data.view(10000,784).detach().numpy()
-y_test = testset.targets.detach().numpy()
+# x_test = testset.data.view(10000,784).detach().numpy()
+# y_test = testset.targets.detach().numpy()
 
-y_pred = clf.predict(x_test)
-acc = accuracy_score(y_test, y_pred)
+# y_pred = clf.predict(x_test)
+# acc = accuracy_score(y_test, y_pred)
 
-class skl_callable():
-    """Wraps a scikit learn model into a callable
-    """
-    def __init__(self, model):
-        self.model = model
+# class skl_callable():
+#     """Wraps a scikit learn model into a callable
+#     """
+#     def __init__(self, model):
+#         self.model = model
     
-    def __call__(self, sample):
-        return self.model.predict_proba(sample.reshape(1, -1))
+#     def __call__(self, sample):
+#         return self.model.predict_proba(sample.reshape(1, -1))
 
-b = skl_callable(clf)
+# b = skl_callable(clf)
 
-a=0
-for i in x_test:
-    a +=1
-    if a > 10:
-        break
-    print(b(i))
+# a=0
+# for i in x_test:
+#     a +=1
+#     if a > 10:
+#         break
+#     print(b(i))
+
+a = np.linalg.norm([1, 1, 1])
 
 #     else:
 #         clf3 = joblib.load('../models/RFC.pkl')

@@ -1,6 +1,7 @@
 from foolbox.criteria import Criterion
+from foolbox.models import Model
 from abc import ABC, abstractmethod
-from typing import TypeVar, Any
+from typing import Callable, TypeVar, Any
 import eagerpy as ep
 import numpy as np
 import torch
@@ -60,6 +61,15 @@ class iskl_adversarial(Criterion):
         # print(self.target_classes)
         is_adv = [bool(classes == self.target_classes)]
         return is_adv
+
+def get_is_adversarial(
+    criterion: Criterion, model: Model
+) -> Callable[[ep.Tensor], ep.Tensor]:
+    def is_adversarial(perturbed: ep.Tensor) -> ep.Tensor:
+        outputs = model(perturbed)
+        return criterion(perturbed, outputs), outputs
+
+    return is_adversarial
 
 def flatten(x: ep.Tensor, keep: int = 1) -> ep.Tensor:
     return x.flatten(start=keep)
