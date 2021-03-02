@@ -39,7 +39,7 @@ def evaluate_policy(
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
-    episode_rewards, episode_lengths, epsilons = [], [], []
+    episode_rewards, episode_lengths, epsilons, acc = [], [], [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
         if not isinstance(env, VecEnv) or i == 0:
@@ -49,23 +49,27 @@ def evaluate_policy(
         episode_length = 0
         while not done:
             action, state = model.predict(obs, state=state, deterministic=deterministic)
+            # print(action)
             # loading the model returns an extra dim, hence squeeze
-            obs, reward, done, _info = env.step(action.squeeze(1))
+            obs, reward, done, _info = env.step(action)
             episode_reward += reward
             if callback is not None:
                 callback(locals(), globals())
             episode_length += 1
             epsilon = _info['epsilon']
+            correct = _info['correct']
             if render:
                 env.render()
         episode_rewards.append(episode_reward)
         episode_lengths.append(episode_length)
         epsilons.append(epsilon)
+        acc.append(correct)
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
     mean_epsilon = np.mean(epsilons)
+    mean_acc = np.mean(acc)
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
         return episode_rewards, episode_lengths
-    return mean_reward, std_reward, mean_epsilon
+    return mean_reward, std_reward, mean_epsilon, mean_acc

@@ -13,7 +13,7 @@ def getSimilarityEncoding(query):
     return s
 
 class Buckets():
-    def __init__(self, nrBuckets=10, sizeState=30, threshold=0.3):
+    def __init__(self, nrBuckets=10, sizeState=30, threshold=0.02):
         self.buckets = []
         self.enc = []
         self.threshold = threshold
@@ -28,17 +28,22 @@ class Buckets():
             #print('indexOfBucketToReplace ',indexOfBucketToReplace)
             self.buckets[indexOfBucketToReplace] = Bucket(self.sizeState)
     
-    def addQuery(self, query, action, logit, is_misdirection):
+    def addQuery(self, query, logit, is_misdirection):
         # returns bucket and bucket.getStateRepresentation if within the similarity threshold
         # when no buckets within the threshold a new one is made, then added to the back of the list
         # returns the index of the bucket
         simEnc = getSimilarityEncoding(query)
         index = None
+        a = []
         for i,bucket in enumerate(self.buckets):
-            a = l2(bucket.getLastEncoding(), simEnc)
+            a.append(l2(bucket.getLastEncoding(), simEnc))
             # print(a)
-            if a < self.threshold:
-                index = i
+            # if a < self.threshold:
+            #     index = i
+        # if a:
+        #     print(min(a))
+        if a and a[np.argmin(a)] < self.threshold:
+            index = np.argmin(a)
         if len(self.buckets)==self.nrBuckets and index is None:
             indexBucketToReplace = self.lastBucketsUsed[0]
             self.__createNewBucket__(indexBucketToReplace)
@@ -46,7 +51,7 @@ class Buckets():
         elif index is None:
             self.__createNewBucket__()
             index = len(self.buckets)-1
-        self.buckets[index].addQueryToBucket(query, action, logit, simEnc, is_misdirection)
+        self.buckets[index].addQueryToBucket(query, logit, simEnc, is_misdirection)
         self.lastBucketsUsed.remove(index)
         self.lastBucketsUsed.append(index)
         return index
@@ -58,8 +63,8 @@ class Buckets():
         # print(bucketNumber)
         return self.buckets[bucketNumber].getStepSize()
     
-    def getLastActionBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getLastAction()
+    def getOriginBucket(self,bucketNumber):
+        return self.buckets[bucketNumber].getOrigin()
     
     def getLastStepBucket(self,bucketNumber):
         return self.buckets[bucketNumber].getLastStep()
@@ -79,13 +84,13 @@ class Buckets():
 class Bucket():
     def __init__(self, sizeState):
         self.sizeState = sizeState
-        self.sizeBucketMemory = 50
+        self.sizeBucketMemory = 30
         self.amountOfQueries = 0
         self.encodings = []
         self.queryMemory = []
         self.stepsize = []
         self.misdirections = []
-        self.actions = []
+        # self.actions = []
         self.logits = []
         self.starts = []
         self.origins = []
@@ -93,7 +98,7 @@ class Bucket():
     # queryMemory -> [query 1, query 2, query 3 ... query N]
     # after update
     # queryMemory -> [query 2, query 3, query 4 ... query N+1]
-    def addQueryToBucket(self, query, action, logit, similaritySpaceEncoding, misdirection):
+    def addQueryToBucket(self, query, logit, similaritySpaceEncoding, misdirection):
         # self.lastBenignLabel = realLabel
         if self.amountOfQueries >= self.sizeBucketMemory:
             self.queryMemory.pop(0)
@@ -101,28 +106,28 @@ class Bucket():
             self.encodings.pop(0)            
             self.stepsize.pop(0)
             self.misdirections.pop(0)
-            self.actions.pop(0)
+            # self.actions.pop(0)
             self.logits.pop(0)
 
         if not self.stepsize:
             # average on MNIST
-            self.stepsize.append(0.11)
+            self.stepsize.append(0.5)
         else:
             # self.averageSimilaritySpaceEncoding = (self.amountOfQueries * self.averageSimilaritySpaceEncoding + similaritySpaceEncoding)/(self.amountOfQueries+1)
             self.stepsize.append(l2(self.queryMemory[-1], query))
             
         self.encodings.append(similaritySpaceEncoding)
         self.misdirections.append(misdirection)
-        self.actions.append(action)
+        # self.actions.append(action)
         self.logits.append(logit.squeeze().numpy())
         self.queryMemory.append(query)
         self.amountOfQueries += 1
         
         if self.amountOfQueries <= 49:
-            rank = np.argsort(self.logits[self.amountOfQueries-1])
+            rank = np.argsort(self.logits[-1])
             # print(rank)
             self.starts.append(rank[-1])
-            self.origins.append(rank[-2])
+            # self.origins.append(rank[-2])
             self.setStartOrigin()
             # print(self.start)
             # print(self.origin)
@@ -132,16 +137,21 @@ class Bucket():
         
     def setStartOrigin(self):
         self.start = np.argmax(np.bincount(self.starts))
-        self.origin = np.argmax(np.bincount(self.origins))
+        # self.origin = np.argmax(np.bincount(self.origins))
         
-    def getStartOrigin(self):
-        return self.start, self.origin
+    def getOrigin(self):
+        rank = np.argsort(self.logits[-1])
+        if rank[-1] == self.start:
+            self.origin = rank[-2]
+        else:
+            self.origin = rank[-1]
+        return self.origin
         
     def getLastEncoding(self):
         return self.encodings[-1]
     
-    def getLastAction(self):
-        return self.actions[-1]
+    # def getLastAction(self):
+    #     return self.actions[-1]
     
     def getLastStep(self):
         return self.stepsize[-1]
@@ -154,8 +164,17 @@ class Bucket():
     
     def getLastRealLabel(self):
         return self.lastRealLabel
-        
-    def getStateRepresentation(self,timeInPast=0):
+    
+    def getStateRepresentation(self):
+        # print(len(self.logits))
+        arr = np.concatenate(self.logits)
+        # print(arr.shape)
+        state = np.zeros(300)
+        state[0:len(arr)] = arr
+        # print(state)
+        return np.asarray(state)
+    
+    def getStateRepresentation2(self,timeInPast=0):
         lenQueryMem = len(self.queryMemory)
         low = max(lenQueryMem - self.sizeState - timeInPast, 0)
         high = max(lenQueryMem - timeInPast, 0)

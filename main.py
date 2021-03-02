@@ -1,11 +1,9 @@
 import argparse
 import gym
+import pandas as pd
+import numpy as np
 from stable_baselines3 import DQN, PPO
 from utils.evaluation import evaluate_policy
-for env in list(gym.envs.registry.env_specs):
-     if 'BoundaryStep-v0' in env:
-          print('Remove {} from registry'.format(env))
-          del gym.envs.registry.env_specs[env]
 from envs.boundary_step import BoundaryStep
 
 def main(args):
@@ -14,7 +12,7 @@ def main(args):
     :param args: (ArgumentParser) the input arguments
     """
     # Create environment
-    env = gym.make("BoundaryStep-v0", steps=1001)
+    env = gym.make("BoundaryStep-v0", steps=1001, ratio_benign=0.5)
     logdir = "./logs"
     
     # using layer norm policy here is important for parameter space noise!
@@ -33,27 +31,36 @@ def main(args):
     #     seed=2,
     #     policy_kwargs=dict(net_arch=[64, 64])
     # )
-    model = PPO(
-        policy="MlpPolicy",
-        env=env,
-        learning_rate=1e-3,
-        gamma=0.99,
-        tensorboard_log=None,
-        verbose=0,
-        seed=2,
-        policy_kwargs=dict(net_arch=[64, 64])
-    )
-    model.learn(total_timesteps=args.max_timesteps)
+    # model = PPO(
+    #     policy="MlpPolicy",
+    #     env=env,
+    #     learning_rate=1e-4,
+    #     gamma=0.9,
+    #     use_sde=True,
+    #     tensorboard_log=None,
+    #     verbose=0,
+    #     seed=2,
+    #     policy_kwargs=dict(net_arch=[64, 64])
+    # )
+    # model.learn(total_timesteps=args.max_timesteps)
 
-    print("Saving model to boundarystep_model.zip")
-    model.save("boundarystep_model")
+    # print("Saving model to boundarystep_model.zip")
+    # model.save("boundarystep_model")
     
     # Load the trained agent
     model = PPO.load("boundarystep_model")
 
     # Evaluate the agent
-    envv = gym.make("BoundaryStep-v0", steps=1001, train=False)
-    mean_reward, std_reward, mean_epsilon = evaluate_policy(model, envv, n_eval_episodes=100)
+    envv = gym.make("BoundaryStep-v0", steps=1001, ratio_benign=0.5, train=False)
+    mean_reward, std_reward, mean_epsilon, mean_acc = evaluate_policy(model, envv, n_eval_episodes=2)
+    
+    res = np.asarray([mean_reward, std_reward, mean_epsilon, mean_acc])
+    np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
+    print(res)
+    
+    # df = pd.DataFrame({'mean_reward': mean_reward, 'std_reward': std_reward, 'mean_epsilon': mean_epsilon, 'mean_acc': mean_acc})
+    # # file_path = os.path.join(logdir, '50benign.csv')
+    # df.to_csv('/logs/50benign.csv', index=Falsef, loat_format='%.3f')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train DQN on BoundaryStep")
