@@ -10,10 +10,10 @@ from envs.boundary_skip import BoundarySkip
 Train and save the DQN model for the boundary attack env
 :param args: (ArgumentParser) the input arguments
 """
-# Create environment
-env = gym.make("BoundarySkip-v0", steps=100)
-logdir = "./logs"
+logdir = "./logs/tb"
 
+# Create environment
+env = gym.make("BoundarySkip-v0", steps=1000)
 
 model = PPO(
     policy="MlpPolicy",
@@ -25,7 +25,8 @@ model = PPO(
     # use_sde=True,
     verbose=0,
     seed=2,
-    policy_kwargs=dict(net_arch=[64, 64])
+    policy_kwargs=dict(net_arch=[64,64])
+    # policy_kwargs=dict(net_arch=[64, dict(vf=[64], pi=[32, 32])])
 )
 model.learn(total_timesteps=int(5e4))
 
@@ -36,7 +37,7 @@ model.save("boundaryskip_model")
 model = PPO.load("boundaryskip_model")
 
 # Evaluate the agent
-envv = gym.make("BoundarySkip-v0", steps=1000, train=False)#, nonadaptive=True)
+envv = gym.make("BoundarySkip-v0", steps=1000, train=False, tensorboard = logdir)#, nonadaptive=True)
 mean_reward, std_reward, mean_epsilon, _ = evaluate_policy(model, envv, n_eval_episodes=10)
 
 res = np.asarray([mean_reward, std_reward, mean_epsilon])

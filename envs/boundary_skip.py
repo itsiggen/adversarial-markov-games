@@ -31,6 +31,7 @@ class BoundarySkip(gym.Env):
         step_adaptation: float = 1.5,
         nonadaptive = False,
         train = True,
+        rewarder = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
@@ -44,6 +45,7 @@ class BoundarySkip(gym.Env):
         self.source_step_convergence = source_step_convergence
         self.step_adaptation = step_adaptation
         self.nonadaptive = nonadaptive
+        self.rewarder = rewarder
         self.tensorboard = tensorboard
         self.update_stats_every_k = update_stats_every_k
         
@@ -83,6 +85,7 @@ class BoundarySkip(gym.Env):
         # Last iter for improvement
         self.improve_last = 0
         self.improve_avg = 0
+        self.reward_mult = 1
         # Moving average of the step
         self.step_moving = 0.1
         self.gain_moving = 0.1
@@ -129,6 +132,7 @@ class BoundarySkip(gym.Env):
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        # observation = np.append(observation, np.ones(30))
 
         return observation
 
@@ -137,13 +141,15 @@ class BoundarySkip(gym.Env):
         # print(self.iter)
         # print(self.source_steps)
 
-            
+        a = action[0]            
+        action[0] = action[1]
+        action[1] = a
         # scale action
         action[0] = (action[0] + 2) / 4
         action[1] = (action[1] + 2) / 4
         
-        if self.iter < 30:
-            print(action)
+        # if self.iter < 30:
+        #     print(action)
         
         self.converged = self.dist < self.epsilon
         if self.converged or self.iter > self.steps:
@@ -151,10 +157,15 @@ class BoundarySkip(gym.Env):
             self.done = True
             
         if self.nonadaptive:
+            self.spherical_step = 1e-2
+            self.source_step = 1e-2
             action[0], action[1] = 1, 1
 
         source = self.source_steps * action[0]        
         spherical = self.spherical_steps * action[1]
+        
+        self.tb.scalar("source", torch.tensor([action[0]]), self.iter)
+        self.tb.scalar("spherical", torch.tensor([action[1]]), self.iter)
  
         # Draw new proposals
         self.candidates, self.spherical_candidates = draw_proposals(
@@ -181,7 +192,7 @@ class BoundarySkip(gym.Env):
             if self.nonadaptive:
                 self.update_stats()
             obs = self.observation()
-            r = self.reward(2)
+            r = self.reward(self.rewarder)
             # gym step returns: observation, reward, done, info
             info = {"episode_number" : self.iter,
                     "epsilon" : self.dist,
@@ -211,8 +222,10 @@ class BoundarySkip(gym.Env):
             self.dist = l2(self.best_advs, self.wanted_point).numpy()
             self.gain_moving = self.gain_moving * 0.8 + (self.gain[0] * 0.2) / self.gap[0]
             self.improve_avg = self.improve_avg * 0.8 + (self.improve_last * 0.2) / self.steps
+            self.reward_mult = self.improve_last
             self.improve_last = 0
         else:
+            self.reward_mult = 1
             self.improve_last += 1
             self.gain = 0
             
@@ -234,7 +247,7 @@ class BoundarySkip(gym.Env):
         #     plt.show(block=False)
         
         obs = self.observation()
-        r = self.reward(2)
+        r = self.reward(self.rewarder)
         # gym step returns: observation, reward, done, info
         # print(self.dist)
         # if self.iter % 100 == 0 or self.iter == 1:
@@ -261,15 +274,27 @@ class BoundarySkip(gym.Env):
         
 
         observation = []
+        # hist = np.asarray(self.stats_is_adv, dtype=int)
+        # if len(hist) < 30:
+        #     hist = np.ones(30)
+        # print(np.asarray(self.stats_is_adv, dtype=int))
         observation.append(np.mean(self.stats_is_adv))
         observation.append(loc[0])
         observation.append(slope[0])
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        # observation = np.append(observation, hist)
         # observation.appned(self.gain)
         # observation.append(self.iter / self.steps)
         # print(observation)
         return observation
+
+    def reward1(self):
+        if self.gain > 0:
+            reward = (self.gain / self.gap)*self.reward_mult
+        else:
+            reward = 0
+        return reward
 
     def reward2(self):
         fraction = self.dist / self.gap
@@ -279,11 +304,12 @@ class BoundarySkip(gym.Env):
 
     def reward3(self):
         fraction = self.dist / self.gap
-        reward = (1 - fraction ** 0.5) ** 2
+        fraction_previous = (self.dist + self.gain) / self.gap
+        reward = (1 - fraction ** 2) ** 0.5 - (1 - fraction_previous ** 2) ** 0.5
         return reward
 
     def reward4(self):
-        reward = max([1 - self.iter / self.steps, 0.2]) * self.reward2()
+        reward = max([10*self.iter / self.steps, 5]) * self.reward2()
         return reward
 
     def reward5(self):
@@ -293,12 +319,9 @@ class BoundarySkip(gym.Env):
         return reward
 
     def reward(self, reward_nr):
-        # R1
-        if self.gain > 0:
-            reward = 0.5 + self.gain / self.gap
-        else:
-            reward = 0
-
+        if reward_nr == 1:
+            # R1
+            reward = self.reward1()
         if reward_nr == 2:
             # R2
             reward = self.reward2()
@@ -311,6 +334,7 @@ class BoundarySkip(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
+        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         return reward
             
     def update_stats(self):
@@ -376,15 +400,13 @@ class BoundarySkip(gym.Env):
         return startImg, startLabel, originImg, originLabel
     
     def update_tb(self, is_best_adv, cond):
-        self.tb.probability("converged", self.converged, self.iter)
         self.tb.scalar("updated_stats", self.check_spherical_and_update_stats, self.iter)
         self.tb.histogram("norms", self.source_norms, self.iter)
-        self.tb.probability("is_adv", self.is_adv, self.iter)
+        # self.tb.probability("is_adv", self.is_adv, self.iter)
         self.tb.histogram("candidates/distances", self.distances, self.iter)
         self.tb.probability("candidates/closer", self.closer, self.iter)
-        self.tb.probability("candidates/is_best_adv", is_best_adv, self.iter)
-        self.tb.probability("new_best_adv_including_converged", is_best_adv, self.iter)
-        self.tb.probability("new_best_adv", cond, self.iter)
+        # self.tb.probability("candidates/is_best_adv", is_best_adv, self.iter)
+        # self.tb.probability("new_best_adv", cond, self.iter)
 
         self.tb.histogram("spherical_step", self.spherical_steps, self.iter)
         self.tb.histogram("source_step", self.source_steps, self.iter)
