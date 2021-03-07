@@ -2,13 +2,14 @@ import gym
 import pandas as pd
 import numpy as np
 import ray
+import os, sys
 from stable_baselines3 import PPO
-from .utils.evaluation import evaluate_policy
-from envs.boundary_skip import BoundarySkip
+from utils.evaluation import evaluate_policy
+# from envs.boundary_skip import BoundarySkip
 from ray import tune
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.hyperopt import HyperOptSearch
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 """
 Train and save the DQN model for the boundary attack env
 :param args: (ArgumentParser) the input arguments
@@ -16,12 +17,13 @@ Train and save the DQN model for the boundary attack env
 logdir = "../logs/tb"
 
 def objective(config):
+    from envs.boundary_skip import BoundarySkip
     # Create environment
-    env = gym.make("BoundarySkip-v0", steps=1000)
+    env = gym.make("BoundarySkip-v0", steps=1000, rewarder=config["reward"])
     
-    if config["choice"] == "16":
+    if config["arch"] == "16":
         arch = [16,16]
-    elif config["choice"] == "32":
+    elif config["arch"] == "32":
         arch = [32,32]
     else:
         arch = [64,64]
