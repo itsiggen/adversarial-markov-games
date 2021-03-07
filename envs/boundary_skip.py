@@ -32,6 +32,7 @@ class BoundarySkip(gym.Env):
         nonadaptive = False,
         train = True,
         rewarder = 2,
+        dataset = None,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
@@ -56,10 +57,10 @@ class BoundarySkip(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
 
         # Load MNIST pytorch CNN model -- 99.1% acc
-        transform=transforms.ToTensor()
-        self.dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+        # transform=transforms.ToTensor()
+        self.dataset = dataset
         self.mode = Net()
-        self.mode.load_state_dict(torch.load('models/mnist_cnn.pt'))
+        self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
         self.mode.eval()
         self.model = PyTorchModel(self.mode, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
