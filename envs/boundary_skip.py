@@ -14,6 +14,7 @@ from gym import error, spaces, utils
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from models.trainMNISTtorch import Net
+from models.trainAdvMNISTtorch import LeNet5
 from joblib import load
 from collections import deque
 import matplotlib.pyplot as plt
@@ -31,7 +32,7 @@ class BoundarySkip(gym.Env):
         step_adaptation: float = 1.5,
         nonadaptive = False,
         train = True,
-        rewarder = 2,
+        rewarder = 1,
         dataset = None,
         tensorboard = False,
         update_stats_every_k: int = 10
@@ -59,8 +60,11 @@ class BoundarySkip(gym.Env):
         # Load MNIST pytorch CNN model -- 99.1% acc
         # transform=transforms.ToTensor()
         self.dataset = dataset
-        self.mode = Net()
-        self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
+        # self.mode = Net()
+        # self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
+        # self.mode.eval()
+        self.mode = LeNet5()
+        self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
         self.mode.eval()
         self.model = PyTorchModel(self.mode, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
@@ -262,7 +266,7 @@ class BoundarySkip(gym.Env):
                 "correct" : True,
                 "success" : self.success}
         return obs, r, self.done, info
-       
+      
     def observation(self):
         # generate observation based on the history of responses
         
@@ -288,6 +292,7 @@ class BoundarySkip(gym.Env):
         # observation.appned(self.gain)
         # observation.append(self.iter / self.steps)
         # print(observation)
+        
         return observation
 
     def reward1(self):

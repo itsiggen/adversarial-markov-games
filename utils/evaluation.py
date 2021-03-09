@@ -67,9 +67,10 @@ def evaluate_policy(
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
     mean_epsilon = np.mean(epsilons)
+    std_epsilon = np.std(epsilons)
     mean_acc = np.mean(acc)
     if reward_threshold is not None:
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
         return episode_rewards, episode_lengths
-    return mean_reward, std_reward, mean_epsilon, mean_acc
+    return mean_reward, std_reward, mean_epsilon, std_epsilon, mean_acc

@@ -52,7 +52,7 @@ def main(args):
 
     # Evaluate the agent
     envv = gym.make("BoundaryStep-v0", steps=1001, ratio_benign=0.5, train=False)
-    mean_reward, std_reward, mean_epsilon, mean_acc = evaluate_policy(model, envv, n_eval_episodes=2)
+    mean_reward, std_reward, mean_epsilon, std_epsilon, mean_acc = evaluate_policy(model, envv, n_eval_episodes=2)
     
     res = np.asarray([mean_reward, std_reward, mean_epsilon, mean_acc])
     np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')

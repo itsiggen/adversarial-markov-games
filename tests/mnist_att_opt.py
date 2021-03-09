@@ -30,13 +30,10 @@ def objective(trial):
     
     # Create environment
     env = gym.make("BoundarySkip-v0", steps=1000, rewarder=reward, dataset=dataset)
-    
-    # if config["arch"] == "16":
-    #     arch = [16,16]
-    # elif config["arch"] == "32":
-    #     arch = [32,32]
-    # else:
-    #     arch = [64,64]
+    """
+    Best parameters: {'architecture': 16, 'sde': False, 'lr': 0.00093, 'gamma': 0.9069, 'ent_coef': .00005, 'reward': 1}
+    Best mean_epsilon: 4.257562637329102.
+    """
     
     model = PPO(
         policy="MlpPolicy",
@@ -49,16 +46,9 @@ def objective(trial):
         verbose=0,
         seed=2,
         policy_kwargs=dict(net_arch=arch)
-        # policy_kwargs=dict(net_arch=[64, dict(vf=[64], pi=[32, 32])])
     )
     model.learn(total_timesteps=int(5e5))
-    
-    # print("Saving model to boundaryskip_model.zip")
-    # model.save("boundaryskip_model")
-    
-    # #Load the trained agent
-    # model = PPO.load("boundaryskip_model")
-    
+
     # Evaluate the agent
     envv = gym.make("BoundarySkip-v0", steps=1000, train=False)#, nonadaptive=True)
     mean_reward, std_reward, mean_epsilon, _ = evaluate_policy(model, envv, n_eval_episodes=100)
