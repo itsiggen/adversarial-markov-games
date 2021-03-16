@@ -7,8 +7,8 @@ def l2(a,b):
     #L2 distance
     return np.linalg.norm(a-b)
 
-similarityModel = load_model('models/SIMILARITYmodel.h5', compile=False)
 def getSimilarityEncoding(query):
+    similarityModel = load_model('models/SIMILARITYmodel.h5', compile=False)
     s = similarityModel.predict(query)
     return s
 

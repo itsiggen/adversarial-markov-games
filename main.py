@@ -3,10 +3,12 @@ import gym
 import pandas as pd
 import numpy as np
 import optuna
-from tests.mnist_att_opt import objective
+from tests.mnist_att_opt import objective_bnd
+from tests.mnist_bags_opt import objective_bags
 
 study = optuna.create_study()  # Create a new study.
-study.optimize(objective, n_trials=100)  # Invoke optimization of the objective function.
+# study.optimize(objective_bnd, n_trials=100)  # Invoke optimization of the objective function.
+study.optimize(objective_bags, n_trials=100)  # Invoke optimization of the objective function.
 
 
 # if __name__ == '__mainatt__':

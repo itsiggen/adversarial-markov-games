@@ -30,15 +30,16 @@ class BoundarySkip(gym.Env):
         source_step: float = 2e-2,
         source_step_convergence: float = 1e-7,
         step_adaptation: float = 1.5,
+        defended = False,
         nonadaptive = False,
         train = True,
         rewarder = 1,
         dataset = None,
+        seed = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
-        super(BoundarySkip, self).__init__()
-        # random.seed(steps)        
+        super(BoundarySkip, self).__init__()      
         
         # Boundary Attack inits
         self.steps = steps
@@ -50,22 +51,25 @@ class BoundarySkip(gym.Env):
         self.rewarder = rewarder
         self.tensorboard = tensorboard
         self.update_stats_every_k = update_stats_every_k
+        random.seed(seed)
         
         # Actions controlled by the adversary
         # self.action_space = spaces.Box(low=1e-5, high=1 - 1e-5, shape=(2,), dtype=np.float32)
         self.action_space = spaces.Box(low=-2, high=2, shape=(2,), dtype=np.float32)
-        # Observation space is the MNIST inputs
+        # Observation space
         self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
 
         # Load MNIST pytorch CNN model -- 99.1% acc
-        # transform=transforms.ToTensor()
         self.dataset = dataset
-        # self.mode = Net()
-        # self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-        # self.mode.eval()
-        self.mode = LeNet5()
-        self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
-        self.mode.eval()
+        if defended:
+            self.mode = LeNet5()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
+            self.mode.eval()
+        else:
+            self.mode = Net()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
+            self.mode.eval()
+
         self.model = PyTorchModel(self.mode, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
     
@@ -149,7 +153,7 @@ class BoundarySkip(gym.Env):
         a = action[0]            
         action[0] = action[1]
         action[1] = a
-        # scale action
+        # scale actions to 0-1
         action[0] = (action[0] + 2) / 4
         action[1] = (action[1] + 2) / 4
         
