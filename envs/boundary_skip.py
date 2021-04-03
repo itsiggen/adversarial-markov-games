@@ -293,7 +293,7 @@ class BoundarySkip(gym.Env):
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
         # observation = np.append(observation, hist)
-        # observation.appned(self.gain)
+        # observation.append(self.gain)
         # observation.append(self.iter / self.steps)
         # print(observation)
         

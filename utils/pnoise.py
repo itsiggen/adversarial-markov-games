@@ -12,18 +12,19 @@ def generate_fractal_noise_2d(shape, res, octaves=1, persistence=0.5):
         amplitude *= persistence
     return noise
 
-def generate_perlin_noise_2d(shape, res):
+def generate_perlin_noise_2d(shape, res, seed=None):
 
-    linx = np.linspace(0, res, shape[0], endpoint=False)
-    liny = np.linspace(0, res, shape[1], endpoint=False)
-    x, y = np.meshgrid(linx, liny)
-    return perlin(x, y)
+    lin = np.linspace(0, res, shape, endpoint=False)
+    x, y = np.meshgrid(lin, lin)
+    return perlin(x, y, seed)
 
 # https://stackoverflow.com/questions/42147776/producing-2d-perlin-noise-with-numpy
-def perlin(x,y,seed=0):
+def perlin(x,y,seed):
     # permutation table
-    # np.random.seed(seed)
-    np.random.seed()
+    if seed is not None:
+        np.random.seed(seed)
+    else:
+        np.random.seed()
     p = np.arange(256,dtype=int)
     np.random.shuffle(p)
     p = np.stack([p,p]).flatten()
@@ -73,5 +74,33 @@ def test():
     # plt.imshow(noise, cmap='gray', interpolation='lanczos')
     # plt.colorbar()
     plt.show()
-    
-test()    
+ 
+# linx = np.linspace(0, 496, 28, endpoint=False)
+# liny = np.linspace(0, 496, 28, endpoint=False)
+# x, y = np.meshgrid(linx, liny)   
+# xi = x.astype(int)
+# yi = y.astype(int)
+# xf = x - xi
+# yf = y - yi
+# u = fade(xf)
+# v = fade(yf)
+ 
+# # p = np.arange(256, dtype=int)
+# # np.random.shuffle(p)
+# # p = np.tile(p, (1, 2))
+
+# p = np.arange(256,dtype=int)
+# np.random.shuffle(p)
+# p = np.stack([p,p]).flatten()
+
+# a = p[p[xi]+yi]
+# b = gradient(a, xf, yf)
+# d = np.array([[0,1],[0,-1],[1,0],[-1,0]])
+# c = a%4
+# e = d[c]
+
+# a = generate_perlin_noise_2d(28, 265)
+# # a /= np.linalg.norm(a)
+# b = np.linalg.norm(a)
+
+# c = pen.create_perlin_noise(28, color=False, normalize=False, freq=5).squeeze(0)

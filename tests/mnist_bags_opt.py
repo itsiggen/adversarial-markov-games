@@ -27,8 +27,8 @@ def objective_bags(trial):
     # Create environment
     env = gym.make("BagsSkip-v0", steps=1000, rewarder=reward, dataset=dataset)
     """
-    Best parameters: {'architecture': 8, 'sde': False, 'lr': 5.6e-5, 'gamma': 0.89, 'ent_coef': 0, 'reward': 1}
-    Best mean_epsilon: 4.14
+    Best parameters: {'architecture': 16, 'sde': False, 'lr': 0.00076, 'gamma': 0.75, 'ent_coef': 0.001, 'reward': 1}
+    Best mean_epsilon: 3.00
     """
     
     model = PPO(

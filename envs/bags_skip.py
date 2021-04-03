@@ -83,7 +83,7 @@ class BagsSkip(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        print("Start:", startLabel, "| Wanted:", originLabel)
+        # print("Start:", startLabel, "| Wanted:", originLabel)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
@@ -158,24 +158,16 @@ class BagsSkip(gym.Env):
         mask = np.abs(self.best_advs - self.wanted_point)
         mask /= np.max(mask)
         self.x_mask = mask
-
-        # # calc step sizes
-        # source_step = 0.002
-        # spherical_step = 0.05
-        # if self.step_loop_current >= self.step_loop_max:
-        #     self.step_loop_current = 0
-        # scale = (1. - self.step_loop_current / self.step_loop_max) + 0.3
-        # source_step_size = source_step * scale
-        # spherical_step_size = spherical_step * scale
-        # self.step_loop_current += 1
         
-        # Setting actions according to vanilla BAGS    
-        scale = (1. - max(self.improve_last/50, 1)) + 0.3
+        # Setting actions according to vanilla BAGS
+        scale = (1 - min(self.improve_last/50, 1)) + 0.3
         if self.nonadaptive:
             self.action_perlin = 5
             self.action_mask = 1
             self.action_spherical = scale * self.spherical_step
             self.action_source = scale * self.source_step
+
+        # print(self.action_perlin, self.action_mask, self.action_spherical, self.action_source)
         
         # generate new advarsarial candidate
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
@@ -191,7 +183,8 @@ class BagsSkip(gym.Env):
         # print(is_best_adv)
 
         if is_best_adv:
-            self.gain = l2(self.candidate, self.best_advs)
+            # self.gain = l2(self.candidate, self.best_advs)
+            self.gain = self.source_norm - self.distance
             self.best_advs = self.candidate
             self.dist = l2(self.best_advs, self.wanted_point)
             self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
@@ -247,7 +240,7 @@ class BagsSkip(gym.Env):
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
         # observation = np.append(observation, hist)
-        # observation.appned(self.gain)
+        # observation.append(self.gain)
         # observation.append(self.iter / self.steps)
         # print(observation)
         
@@ -257,7 +250,8 @@ class BagsSkip(gym.Env):
         # Adapted from FoolBox BoundaryAttack.
             
         mask = mask ** self.action_mask
-        rnd_normal = pn.generate_perlin_noise_2d((28, 28), self.action_perlin)
+        # rnd_normal = pn.create_perlin_noise(self.dim, color=False, freq=self.action_perlin, normalize=False).squeeze(0)
+        rnd_normal = pn.generate_perlin_noise_2d(self.dim, self.action_perlin)
         rnd_normal /= np.linalg.norm(rnd_normal)
         sampling_dir = rnd_normal
 
