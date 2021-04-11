@@ -81,7 +81,7 @@ class HsjaSkip(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # print("Start:", startLabel, "| Wanted:", originLabel)
+        print("Start:", startLabel, "| Wanted:", originLabel)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
@@ -373,6 +373,12 @@ class HsjaSkip(gym.Env):
 
     def reward4(self):
         reward = 1/self.jump_steps + self.reward1()
+        return reward
+    
+    def reward5(self):
+        reward = 0
+        if self.iter >= self.steps:
+            reward = abs(math.log(self.dist / self.gap))
         return reward
 
     # def reward5(self):

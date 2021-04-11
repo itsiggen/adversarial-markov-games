@@ -67,6 +67,7 @@ def get_is_adversarial(
 ) -> Callable[[ep.Tensor], ep.Tensor]:
     def is_adversarial(perturbed: ep.Tensor) -> ep.Tensor:
         outputs = model(perturbed)
+        torch.nn.functional.softmax(logits, dim=1)
         return criterion(perturbed, outputs), outputs
 
     return is_adversarial

@@ -2,7 +2,6 @@ import argparse
 import gym
 import pandas as pd
 import numpy as np
-import supersuit as ss
 from stable_baselines3 import PPO
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_policy
@@ -14,14 +13,12 @@ Train and save the DQN model for the boundary attack env
 :param args: (ArgumentParser) the input arguments
 """
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('./data', train=False, transform=transform)
 
 # Create environment
-# env = gym.make("HsjaSkip-v0", steps=5000, rewarder=1, dataset=dataset)#, nonadaptive=True)
+# env = gym.make("BagsSkip-v0", steps=1000, rewarder=1, dataset=dataset)
 
-# # 'architecture': 8, 'sde': False, 'lr': 0.000056, 'gamma': 0.89, 'ent_coef': 0, 'reward': 1}, best mean_epsilon: 4.14
-
-# # env = ss.concat_vec_envs_v0(env, 8, num_cpus=4, base_class='stable_baselines3')
+# # 'architecture': 16, 'sde': False, 'lr': 0.00076, 'gamma': 0.75, 'ent_coef': 0.001, 'reward': 1}, best mean_epsilon: 3.00
 
 # model = PPO(
 #     policy="MlpPolicy",
@@ -36,16 +33,17 @@ dataset = datasets.MNIST('./data', train=False, transform=transform, download=Tr
 #     policy_kwargs=dict(net_arch=[16,16])
 #     # policy_kwargs=dict(net_arch=[64, dict(vf=[64], pi=[32, 32])])
 # )
-# model.learn(total_timesteps=int(1e2))
+# model.learn(total_timesteps=int(1e5))
 
-# print("Saving model to hsjaskip_model.zip")
-# model.save("hsjaskip_model")
+# print("Saving model to boundaryskip_model.zip")
+# model.save("bagsskip_model")
 
 # Load the trained agent
+# model = PPO.load("boundaryskip_model")
 model = PPO.load("bagsskip_model")
 
 # Evaluate the agent
-envv = gym.make("BagsSkip-v0", steps=5000, train=False, dataset=dataset)#, nonadaptive=True)
+envv = gym.make("BagsSkip-v0", steps=1000, train=False, dataset=dataset, nonadaptive=True)
 mean_reward, std_reward, epsilons, _ = evaluate_policy(model, envv, n_eval_episodes=100)
 
 mean_epsilon = np.mean([x[-1] for x in epsilons])
@@ -54,14 +52,3 @@ median_epsilon = np.median([x[-1] for x in epsilons])
 res = np.asarray([mean_reward, std_reward, mean_epsilon, median_epsilon])
 # np.savetxt('./logs/att.csv', res, delimiter=";", fmt='%1.3f')
 print(res)
-
-# df = pd.DataFrame({'mean_reward': mean_reward, 'std_reward': std_reward, 'mean_epsilon': mean_epsilon})
-# # file_path = os.path.join(logdir, '50benign.csv')
-# df.to_csv('/logs/50benign.csv', index=False, float_format='%.3f')
-
-# if __name__ == '__mainatt__':
-#     parser = argparse.ArgumentParser(description="Train DQN on BoundarySkip")
-#     parser.add_argument('--max-timesteps', default=int(5e4), type=int, help="Maximum number of timesteps")
-#     args = parser.parse_args()
-#     mainatt(args)
-    

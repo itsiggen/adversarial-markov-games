@@ -5,12 +5,13 @@ import torch
 import random
 from foolbox import PyTorchModel
 from foolbox.tensorboard import TensorBoard
-from foolbox.attacks.base import get_is_adversarial
+# from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.buckets import l2
 import utils.pnoise as pn
+from utils.utils import get_is_adversarial
 from models.trainMNISTtorch import Net
 from models.trainAdvMNISTtorch import LeNet5
 from collections import deque
@@ -28,6 +29,7 @@ class BagsSkip(gym.Env):
         source_step: float = 1e-2,
         defended = False,
         nonadaptive = False,
+        ratio_benign = 0,
         train = True,
         rewarder = 1,
         dataset = None,
@@ -42,15 +44,22 @@ class BagsSkip(gym.Env):
         self.spherical_step = spherical_step
         self.source_step = source_step
         self.nonadaptive = nonadaptive
+        self.ration_benign = ratio_benign
         self.rewarder = rewarder
         self.tensorboard = tensorboard
         random.seed(seed)
 
         # Actions space
-        self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
+        self.action_space = spaces.Dict({
+            'adversary': spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32),
+            'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
+            })
         # Observation space
-        self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
-
+        self.observation_space = spaces.Dict({
+            'adversary': spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
+            'interceptor': spaces.Box(low=0, high=1, shape=(300,), dtype=np.float32)
+            })
+        
         # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
         self.dataset = dataset
         if defended:
@@ -70,8 +79,7 @@ class BagsSkip(gym.Env):
         self.done = False
 
     def scale_perlin(self, v):
-        act = ((v + 2) / 4) * (self.dim - 2) + 1
-        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
+        return ((v + 2) / 4) * (self.dim - 2) + 1
 
     def scale_mask(self, v):
         return (v + 2) / 2
@@ -79,14 +87,19 @@ class BagsSkip(gym.Env):
     def scale_step(self, v):
         return (v + 2) / 20
     
+    def scale_intercept(self, v):
+        return (v + 2) / 4
+    
     def reset(self):
-        # Initialize new targeted attack
-        self.iter = 0
+        """ Initialize new targeted attack
+        """
+        self.iter = 0           # num of attack queries
+        self.queries = 0        # num of benign queries
         self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
@@ -111,6 +124,9 @@ class BagsSkip(gym.Env):
         self.actions = []
         self.done = False
         self.success = False
+        # Set current and next player
+        self.curr = 1
+        self.next = 0
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -119,7 +135,7 @@ class BagsSkip(gym.Env):
         else:
             self.best_advs = self.starting_point
 
-        is_adv  = self.is_adversarial(ep.astensor(torch.tensor(self.best_advs).unsqueeze(0).unsqueeze(1)))
+        is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.best_advs).unsqueeze(0).unsqueeze(1)))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
 
@@ -148,9 +164,87 @@ class BagsSkip(gym.Env):
         return observation
 
     def step(self, action):
-        if np.isnan(action).any():
-            print("nan")
+        """
+        Progress through the internal states of the environment: interceptor 
+        always follows after adversary or benign, and adversary or benign follows
+        after interceptor based on a predefined probability
+        """
+        if self.curr == 1 or self.curr == 2:
+            self.step_int()
+            self.roll_next()
+        else:
+            if self.next == 1:
+                self.step_adv()
+            else:
+                self.step_ben()                
+            
+    def step_int(self, action):
+        if self.curr == 1:
+            self.stats_is_adv.append(self.is_adv.numpy()[0])
+            
+            self.distance = l2(self.wanted_point, self.candidate)
+            self.closer = self.distance < self.source_norm
+            # print(action, self.lastStep)
+            # print(self.closer, self.is_adv)
+            is_best_adv = self.is_adv and self.closer
+            # print(is_best_adv)
+    
+            if is_best_adv:
+                # self.gain = l2(self.candidate, self.best_advs)
+                self.gain = self.source_norm - self.distance
+                self.best_advs = self.candidate
+                self.dist = l2(self.best_advs, self.wanted_point)
+                self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
+                self.improve_avg = self.improve_avg * 0.8 + (1/(self.improve_last +1))*0.2
+                self.reward_mult = self.improve_last
+                self.improve_last = 0
+            else:
+                self.reward_mult = 1
+                self.improve_last += 1
+                self.gain = np.float32(0)
+            
+            # TODO: potentially reward shorter episodes
+            is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
+            if is_best_adv and is_within_eps:
+                self.done = True
+                self.success = True
+                # print('success')
+            
+            self.unnormalized_source_direction = self.wanted_point - self.best_advs
+            self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+            self.source_direction = self.unnormalized_source_direction / self.source_norm
+            # update tensorboard
+            # self.update_tb(is_best_adv, cond
+    
+            obs = self.observation()
+            if np.isnan(obs).any():
+                print("nan")
+            r = self.reward(self.rewarder)
+            info = {"episode_number" : self.iter,
+                    "epsilon" : self.dist,
+                    "actions" : action,
+                    "correct" : True,
+                    "success" : self.success}
+            return obs, r, self.done, info
+        elif self.curr == 2:
+            # Classify benign input
+            self.queries += 1
+            if self.switch(self.lastStep, action):
+                # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
+                ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
+            else:
+                ans = self.alt
+            # Check if benign is labeled correctly
+            # print(ans, self.label)
+            self.check_bn = self.label==ans
+            # print(self.check_bn)
+            self.correct.append(self.check_bn)
+            
+        
+    def step_adv(self, action):
         self.iter += 1
+        # Remove nan and inf from actions
+        action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         
         self.converged = self.dist < self.epsilon
         if self.converged or self.iter >= self.steps:
@@ -168,16 +262,6 @@ class BagsSkip(gym.Env):
         mask /= np.max(mask)
         self.x_mask = mask
 
-        # # calc step sizes
-        # source_step = 0.002
-        # spherical_step = 0.05
-        # if self.step_loop_current >= self.step_loop_max:
-        #     self.step_loop_current = 0
-        # scale = (1. - self.step_loop_current / self.step_loop_max) + 0.3
-        # source_step_size = source_step * scale
-        # spherical_step_size = spherical_step * scale
-        # self.step_loop_current += 1
-        
         # Setting actions according to vanilla BAGS    
         scale = (1. - max(self.improve_last/50, 1)) + 0.3
         if self.nonadaptive:
@@ -189,57 +273,30 @@ class BagsSkip(gym.Env):
         # generate new advarsarial candidate
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
                                                      self.action_spherical, self.action_perlin)
-        self.is_adv = self.is_adversarial(ep.astensor(torch.tensor(self.candidate).unsqueeze(0).unsqueeze(1)))
-        self.stats_is_adv.append(self.is_adv.numpy()[0])
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.candidate).unsqueeze(0).unsqueeze(1)))
         
-        self.distance = l2(self.wanted_point, self.candidate)
-        self.closer = self.distance < self.source_norm
-        # print(action, self.lastStep)
-        # print(self.closer, self.is_adv)
-        is_best_adv = self.is_adv and self.closer
-        # print(is_best_adv)
+        
+        # split here
+        
 
-        if is_best_adv:
-            # self.gain = l2(self.candidate, self.best_advs)
-            self.gain = self.source_norm - self.distance
-            self.best_advs = self.candidate
-            self.dist = l2(self.best_advs, self.wanted_point)
-            self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
-            self.improve_avg = self.improve_avg * 0.8 + (1/(self.improve_last +1))*0.2
-            self.reward_mult = self.improve_last
-            self.improve_last = 0
-        else:
-            self.reward_mult = 1
-            self.improve_last += 1
-            self.gain = np.float32(0)
-        
-        # TODO: potentially reward shorter episodes
-        is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
-        if is_best_adv and is_within_eps:
-            self.done = True
-            self.success = True
-            # print('success')
-        
-        self.unnormalized_source_direction = self.wanted_point - self.best_advs
-        self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
-        self.source_direction = self.unnormalized_source_direction / self.source_norm
-        # update tensorboard
-        # self.update_tb(is_best_adv, cond
-
-        obs = self.observation()
-        if np.isnan(obs).any():
-            print("nan")
-        r = self.reward(self.rewarder)
-        info = {"episode_number" : self.iter,
-                "epsilon" : self.dist,
-                "actions" : action,
-                "correct" : True,
-                "success" : self.success}
-        return obs, r, self.done, info
     
-    def observation(self):
-        # generate observation based on the history of responses
-        
+    def step_ben(self, action):
+        pass
+    
+    def observation_int(self, logits, query):
+        # Interceptor the last, adversarial or benign, query
+        probs = torch.nn.functional.softmax(logits, dim=1)
+        index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(1), probs)
+        obs = self.buckets.getState(index)
+        # print(self.benign)
+        # print(bucketIndex)
+        lastStep = self.queues.getLastStepQueue(index)
+        # print(lastStep)
+        origin = self.buckets.getOriginBucket(index)
+
+        return obs, index, lastStep, origin
+    
+    def observation_adv(self):
         # History of success/fail, goal and/or distance to goal, (history of step sizes)
         
         # Use dist in place of moving dist
@@ -267,8 +324,11 @@ class BagsSkip(gym.Env):
         # observation.append(self.iter / self.steps)
         # print(observation)
         
+        # Remove nan and inf from observation
+        observation = np.nan_to_num(observation, nan=0.0, posinf=1, neginf=0)
+        
         return observation
-
+        
     def generate_boundary_sample(self, X_orig, X_adv_current, mask, source_step, spherical_step, perlin_freq):
         # Adapted from FoolBox BoundaryAttack.
             
@@ -353,6 +413,28 @@ class BagsSkip(gym.Env):
             reward = self.reward5()
         self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         return reward
+    
+    def roll_next(self):
+        # decide next query; benign with P = ratio_benign
+        if random.random() < self.ratio_benign and self.iter > 12:
+            self.next = 2
+        else:
+            self.next = 1
+            
+    def switch(self, step, action):
+        # Return False if candidate lies within the action radius, otherwise True
+        # print(is_adv)
+        # if not self.benign:
+        #     action = [1]
+        a = torch.tensor(action)
+        b = torch.tensor(step)
+        # print(a)
+        # print(b)
+        c = ep.astensor(a < b)
+        # print(c)
+        # print(is_adv.shape)
+        # print(a.shape)
+        return c
 
     def get_pair(self):
         startImgNr = random.randint(*self.indices)
