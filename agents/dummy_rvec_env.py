@@ -6,6 +6,8 @@ import gym
 import numpy as np
 
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+from stable_baselines3.common.vec_env.util import obs_space_info
 
 class DummyRvecEnv(DummyVecEnv):
     """
@@ -16,8 +18,19 @@ class DummyRvecEnv(DummyVecEnv):
         that return environments to vectorize
     """
 
-    def __init__(self, env_fns: List[Callable[[], gym.Env]]):
-        super(DummyRvecEnv, self).__init__(env_fns)
+    def __init__(self, env_fns: List[Callable[[], gym.Env]], agent):
+        self.envs = [fn() for fn in env_fns]
+        env = self.envs[0]
+        VecEnv.__init__(self, len(env_fns), env.observation_space, env.action_space)
+        obs_space = env.observation_spaces[agent]
+        self.keys, shapes, dtypes = obs_space_info(obs_space)
+
+        self.buf_obs = OrderedDict([(k, np.zeros((self.num_envs,) + tuple(shapes[k]), dtype=dtypes[k])) for k in self.keys])
+        self.buf_dones = np.zeros((self.num_envs,), dtype=np.bool)
+        self.buf_rews = np.zeros((self.num_envs,), dtype=np.float32)
+        self.buf_infos = [{} for _ in range(self.num_envs)]
+        self.actions = None
+        self.metadata = env.metadata
     
     def step_wait(self):
         for env_idx in range(self.num_envs):

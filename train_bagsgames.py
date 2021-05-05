@@ -17,9 +17,9 @@ def train(args):
     dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     # Create environment
     steps = 1000
-    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=0.5, adaptive=1, dataset=dataset, seed=2)
+    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=0.5, adaptive=2, dataset=dataset, seed=2)
     logdir = "./logs"
-    total_timesteps = int(5e3)
+    total_timesteps = int(5e5)
     
     interceptor = RPPO(policy="MlpPolicy",
                 env=env,
@@ -72,14 +72,11 @@ def train(args):
             if n_steps == 1:
                 # env has been just reset
                 agents[1].set_last(obs, False)
-            # elif done:
-            #     term_obs = env.get_obs()
-            #     agents[1].proceed(term_obs, reward, done, info)
             else:
                 agents[prev].proceed(obs, reward, done, info)
         elif curr == 1 or curr == 2:
             if done:
-                # print('done1')
+                print(info)
                 term_obs = agents[1].env.get_obs()
                 agents[0].proceed(term_obs, reward, done, info)
                 done, curr, nxt, n_steps = reset()
@@ -92,7 +89,7 @@ def train(args):
     adversary.save("adversary_model")
     
     # Make evaluation env
-    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=0.5, adaptive=1, dataset=dataset, seed=2)
+    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=0.5, adaptive=2, dataset=dataset, train=False, seed=2)
     # Load the trained agents
     interceptor = RPPO.load("interceptor_model", envv, "interceptor")
     adversary = RPPO.load("adversary_model", envv, "adversary")
@@ -111,6 +108,7 @@ def train(args):
 def check_full(agents):
     for i in range(2):
         if agents[i].rollout_buffer.full:
+            print("Training agent...")
             agents[i].close_buffer()
             agents[i].train()
             agents[i].reset_buffer()

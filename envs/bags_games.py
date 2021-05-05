@@ -197,9 +197,9 @@ class BagsGames(gym.Env):
         if self.curr == 1:
             # Candidate remains adversarial only if outside the containment area
             candid = self.switch(self.lastStep, action)
-            self.is_adv = self.is_adv and candid
-
-            self.stats_is_adv.append(self.is_adv)
+            self.is_adv = np.logical_and(self.is_adv, candid)
+          
+            self.stats_is_adv.append(self.is_adv[0])
             
             self.distance = l2(self.wanted_point, self.candidate)
             self.closer = self.distance < self.source_norm
@@ -234,13 +234,14 @@ class BagsGames(gym.Env):
             # update tensorboard
             # self.update_tb(is_best_adv, cond
     
-            obs = self.observation_adv()
+            # Make obs object var so it can be returned from benign
+            self.obs = self.observation_adv()
 
             r = self.reward_adv(self.rewarder)
             info = self.get_info()
             # Set state to interceptor
             self.curr = 0
-            return obs, r, self.done, info
+            return self.obs, r, self.done, info
         
         elif self.curr == 2:
             # Classify benign input
@@ -259,7 +260,7 @@ class BagsGames(gym.Env):
             # obs, info = {}
             # Set state to interceptor
             self.curr = 0
-            return {}, 0, self.done, {}
+            return self.obs, 0, self.done, {}
                  
     def step_adv(self, action):
         self.iter += 1
@@ -535,7 +536,8 @@ class BagsGames(gym.Env):
     
     def get_info(self):
         correct = np.mean(self.correct) if len(self.correct) != 0 else 1
-        info = {"episode_number" : self.iter + self.queries,
+        info = {"iterations" : self.iter,
+                "benigns" : self.queries,
                 "epsilon" : self.dist,
                 "correct" : correct,
                 "success" : self.success}

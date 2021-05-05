@@ -49,12 +49,9 @@ class RPPO(PPO):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
     ):
-        
-        # Define observation and action space for each type of agent
+        self.agent = agent
         env.observation_space = env.observation_spaces[agent]
         env.action_space = env.action_spaces[agent]
-        self.agent = agent
-
         super(RPPO, self).__init__(
             policy,
             env,
@@ -81,6 +78,10 @@ class RPPO(PPO):
             _init_setup_model=_init_setup_model,
         )
         
+        # Define observation and action space for each type of agent
+        self.observation_space = env.observation_spaces[agent]
+        self.action_space = env.action_spaces[agent]
+         
     def reset_buffer(self):
         self.n_steps = 0
         self.rollout_buffer.reset()
@@ -156,11 +157,10 @@ class RPPO(PPO):
         # Configure logger's outputs
         utils.configure_logger(self.verbose, self.tensorboard_log, tb_log_name, reset_num_timesteps)
 
-    @staticmethod
-    def _wrap_env(env: GymEnv, verbose: int = 0) -> VecEnv:
+    def _wrap_env(self, env: GymEnv, verbose: int = 0) -> VecEnv:
         if not isinstance(env, VecEnv):
             # print("Wrapping the env in a DummyRVecEnv.")
-            env = DummyRvecEnv([lambda: env])
+            env = DummyRvecEnv([lambda: env], self.agent)
         return env
     
     @classmethod
@@ -197,27 +197,25 @@ class RPPO(PPO):
         if "observation_space" not in data or "action_space" not in data:
             raise KeyError("The observation_space and action_space were not given, can't verify new environments")
 
-        if env is not None:
-            # Wrap first if needed
-            env = cls._wrap_env(env, data["verbose"])
+        # if env is not None:
+        #     # Wrap first if needed
+        #     env = cls._wrap_env(env, data["verbose"])
             
-            # Check if given env is valid
-            check_for_correct_spaces(env, data["observation_space"], data["action_space"])
-        else:
-            # Use stored env, if one exists. If not, continue as is (can be used for predict)
-            if "env" in data:
-                env = data["env"]
+        #     # Check if given env is valid
+        #     check_for_correct_spaces(env, data["observation_space"], data["action_space"])
+        # else:
+        #     # Use stored env, if one exists. If not, continue as is (can be used for predict)
+        #     if "env" in data:
+        #         env = data["env"]
 
         # noinspection PyArgumentList
         model = cls(
             policy=data["policy_class"],
             env=env,
-            agent=agent, CHECK WHY it isnt INITIALIZED n wrapped PROPERLY
+            agent=agent,
             device=device,
             _init_setup_model=False,  # pytype: disable=not-instantiable,wrong-keyword-args
         )
-            
-            WRAP IT HERE OR AFTER, LIKE INIT DOES 
 
         # load parameters
         model.__dict__.update(data)
