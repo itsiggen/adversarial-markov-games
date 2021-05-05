@@ -179,8 +179,8 @@ class BagsSkip(gym.Env):
         # self.step_loop_current += 1
         
         # Setting actions according to vanilla BAGS    
-        scale = (1. - max(self.improve_last/50, 1)) + 0.3
         if self.nonadaptive:
+            scale = (1. - max(self.improve_last/50, 1)) + 0.3
             self.action_perlin = 5
             self.action_mask = 1
             self.action_spherical = scale * self.spherical_step

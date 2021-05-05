@@ -12,7 +12,7 @@ def main(args):
     :param args: (ArgumentParser) the input arguments
     """
     # Create environment
-    env = gym.make("BoundaryStep-v0", steps=1001, ratio_benign=0.5)
+    env = gym.make("BagsGames-v0", steps=1000, ratio_benign=0.5)
     logdir = "./logs"
     
     # using layer norm policy here is important for parameter space noise!
@@ -67,15 +67,3 @@ if __name__ == '__main__':
     parser.add_argument('--max-timesteps', default=int(5e4), type=int, help="Maximum number of timesteps")
     args = parser.parse_args()
     main(args)
-    
-
-        
-        # self.startTrainingQuery = 200
-        
-        # def __init__(self, policy, env, gamma=0.99, learning_rate=5e-4, buffer_size=50000, exploration_fraction=0.1,
-        #          exploration_final_eps=0.02, exploration_initial_eps=1.0, train_freq=1, batch_size=32, double_q=True,
-        #          learning_starts=1000, target_network_update_freq=500, prioritized_replay=False,
-        #          prioritized_replay_alpha=0.6, prioritized_replay_beta0=0.4, prioritized_replay_beta_iters=None,
-        #          prioritized_replay_eps=1e-6, param_noise=False,
-        #          n_cpu_tf_sess=None, verbose=0, tensorboard_log=None,
-        #          _init_setup_model=True, policy_kwargs=None, full_tensorboard_log=False, seed=None):

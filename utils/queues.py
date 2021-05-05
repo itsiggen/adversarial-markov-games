@@ -23,7 +23,7 @@ class Queues():
             self.queues.append(Queue(self.sizeState))
             
     # assign to queue based on minimum similarity encoding
-    def addQuery(self, query):
+    def addQuery(self, query, logits):
         simEnc = getSimilarityEncoding(query)
         a = []
         for i, queue in enumerate(self.queues):
@@ -32,32 +32,27 @@ class Queues():
             index = np.argmin(a)
         else:
             index = np.argmax(a)
+        self.queues[index].addQueryToQueue(query, logits, simEnc)
         return index
 
     def getState(self, index):
-        return self.buckets[index].getStateRepresentation()
+        return self.queues[index].getStateRepresentation()
                
-    def getStepSizeBucket(self,bucketNumber):
-        # print(bucketNumber)
-        return self.buckets[bucketNumber].getStepSize()
+    def getStepSizeQueue(self,queueNumber):
+        # print(queueNumber)
+        return self.queues[queueNumber].getStepSize()
     
-    def getOriginBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getOrigin()
+    def getOriginQueue(self,queueNumber):
+        return self.queues[queueNumber].getOrigin()
     
-    def getLastStepBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getLastStep()
+    def getLastStepQueue(self,queueNumber):
+        return self.queues[queueNumber].getLastStep()
     
-    def getMisdirectionBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getMisdirection()
+    def getQueueIsFull(self,queueNumber):
+        return self.queues[queueNumber].getIfQueueIsFull()
     
-    def getIfBucketIsFullBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getIfBucketIsFull()
-    
-    def getLastRealLabel(self,bucketNumber):
-        return self.buckets[bucketNumber].getLastRealLabel()
-    
-    def getLastStateRepresentationBucket(self,bucketNumber):
-        return self.buckets[bucketNumber].getLastStateRepresentation()
+    def getLastStateRepresentationQueue(self,queueNumber):
+        return self.queues[queueNumber].getLastStateRepresentation()
 
 class Queue():
     def __init__(self, sizeState):
@@ -73,7 +68,7 @@ class Queue():
 
     def addQueryToQueue(self, query, logit, similaritySpaceEncoding):
         # self.lastBenignLabel = realLabel
-        if self.amountOfQueries >= self.sizeBucketMemory:
+        if self.amountOfQueries >= self.sizeQueueMemory:
             self.queryMemory.pop(0)
             self.encodings.pop(0)            
             self.stepsize.pop(0)
@@ -114,19 +109,18 @@ class Queue():
         return self.origin
         
     def getLastEncoding(self):
+        if len(self.encodings) == 0:
+            return 0
         return self.encodings[-1]
     
     def getLastStep(self):
         return self.stepsize[-1]
-
-    def getMisdirection(self):
-        return self.misdirections[-1]
     
-    def getIfBucketIsFull(self):
+    def getStepSize(self):
+        return self.stepsize
+    
+    def getIfQueueIsFull(self):
         return len(self.queryMemory) >= self.sizeState
-    
-    def getLastRealLabel(self):
-        return self.lastRealLabel
     
     def getStateRepresentation(self):
         # print(len(self.logits))
@@ -151,6 +145,3 @@ class Queue():
         
     def getLastStateRepresentation(self):
         return self.getStateRepresentation(timeInPast=1) if len(self.queryMemory)-1 >= self.sizeState else None
-        
-    def getStepSize(self):
-        return self.stepsize

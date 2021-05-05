@@ -73,3 +73,59 @@ def evaluate_policy(
     if return_episode_rewards:
         return episode_rewards, episode_lengths
     return mean_reward, std_reward, epsilons, mean_acc
+
+def evaluate_rpolicy(
+    interceptor,
+    adversary,
+    benign,
+    env: Union[gym.Env, VecEnv],
+    n_eval_episodes: int = 10,
+    deterministic: bool = True,
+    callback: Optional[Callable] = None,
+    reward_threshold: Optional[float] = None,
+) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
+    """
+    Similar to evaluate_policy, but for competitive envs and returns average reward.
+    This is made to work only with one env.
+
+    """
+    if isinstance(env, VecEnv):
+        assert env.num_envs == 1, "You must pass only one environment when using this function"
+
+    episode_rewards, lengths, epsilons, acc = [], [], [], []
+    
+    agents = [interceptor, adversary, benign]
+    
+    # Reset once as VecEnv are reset automatically afterwards
+    obs = env.reset()
+    for i in range(n_eval_episodes):
+        done, state = False, None
+        curr, nxt = 1, 0
+        agent_rewards = [0.0,0.0,0.0]
+        agent_steps = [0,0,0]
+        epsilon = []
+        while not done:
+            prev = curr
+            action, state = agents[nxt].predict(obs, deterministic=deterministic)
+            # loading the model returns an extra dim, hence squeeze
+            obs, reward, done, _info, curr, nxt = env.step(action)
+            # print(curr, nxt)
+            agent_rewards[prev] += reward
+            # if curr == 0:
+            #     elif curr = 1:
+            #         else:
+            agent_steps[curr] += 1
+            if curr == 0 and prev == 1:
+                epsilon.append(_info['epsilon'])
+                correct = _info['correct']
+        episode_rewards.append(agent_rewards)
+        lengths.append(agent_steps)
+        epsilons.append(epsilon)
+        acc.append(correct)
+    mean_reward_int = np.mean(episode_rewards[0])
+    std_reward_int = np.std(episode_rewards[0])
+    mean_reward_adv = np.mean(episode_rewards[1])
+    std_reward_adv = np.std(episode_rewards[1])
+    mean_acc = np.mean(acc)
+
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_acc

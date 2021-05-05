@@ -16,24 +16,24 @@ transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False, transform=transform)
 
 # Create environment
-# env = gym.make("BagsSkip-v0", steps=1000, rewarder=1, dataset=dataset)
+env = gym.make("BagsSkip-v0", steps=1000, rewarder=1, dataset=dataset)
 
 # # 'architecture': 16, 'sde': False, 'lr': 0.00076, 'gamma': 0.75, 'ent_coef': 0.001, 'reward': 1}, best mean_epsilon: 3.00
 
-# model = PPO(
-#     policy="MlpPolicy",
-#     env=env,
-#     learning_rate=0.0001,
-#     gamma=0.90,
-#     tensorboard_log=None,
-#     # ent_coef = 0.00005,
-#     # use_sde=True,
-#     verbose=0,
-#     seed=2,
-#     policy_kwargs=dict(net_arch=[16,16])
-#     # policy_kwargs=dict(net_arch=[64, dict(vf=[64], pi=[32, 32])])
-# )
-# model.learn(total_timesteps=int(1e5))
+model = PPO(
+    policy="MlpPolicy",
+    env=env,
+    learning_rate=0.0001,
+    gamma=0.90,
+    tensorboard_log=None,
+    # ent_coef = 0.00005,
+    # use_sde=True,
+    verbose=0,
+    seed=2,
+    policy_kwargs=dict(net_arch=[16,16])
+    # policy_kwargs=dict(net_arch=[64, dict(vf=[64], pi=[32, 32])])
+)
+model.learn(total_timesteps=int(1e5))
 
 # print("Saving model to boundaryskip_model.zip")
 # model.save("bagsskip_model")

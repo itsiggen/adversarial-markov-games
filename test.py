@@ -81,7 +81,13 @@ from joblib import dump, load
 #         break
 #     print(b(i))
 
-a = np.linalg.norm([1, 1, 1])
+# a = np.linalg.norm([1, 1, 1])
+
+a = []
+
+a[1] = 1
+a[0] = 2
+a[1] += 3
 
 #     else:
 #         clf3 = joblib.load('../models/RFC.pkl')

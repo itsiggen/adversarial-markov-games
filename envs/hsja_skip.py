@@ -54,7 +54,7 @@ class HsjaSkip(gym.Env):
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
         # Observation space
-        self.observation_space = spaces.Box(low=0, high=1, shape=(54,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
 
         # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
         self.dataset = dataset
@@ -70,6 +70,7 @@ class HsjaSkip(gym.Env):
         self.model = PyTorchModel(self.mode, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
+        self.resets = 0
     
         self.done = False
     
@@ -79,9 +80,11 @@ class HsjaSkip(gym.Env):
         self.reps = 0
         self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
+        while np.isnan(self.starting_point).any() or np.isnan(self.wanted_point).any():
+            self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        print("Start:", startLabel, "| Wanted:", originLabel)
+        # print("Start:", startLabel, "| Wanted:", originLabel)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
@@ -99,6 +102,7 @@ class HsjaSkip(gym.Env):
         self.actions = []
         self.done = False
         self.success = False
+        self.resets += 1
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -112,8 +116,8 @@ class HsjaSkip(gym.Env):
             raise ValueError("starting_point is not adversarial")
             
         self.best_advs, self.extra_queries = self.binary_step(ep.astensor(self.best_advs), 1)    
-        pos = self.best_advs.squeeze(0).numpy()
-        pos = pos[::4,::4].flatten().tolist()
+        # pos = self.best_advs.squeeze(0).numpy()
+        # pos = pos[::4,::4].flatten().tolist()
         
         observation = []
         # observation.append(np.float32(1.0))
@@ -123,7 +127,7 @@ class HsjaSkip(gym.Env):
         observation.append(np.float32(1.0))
         observation.append(np.float32(0.5))
         observation.append(np.float32(0.0))
-        observation.extend(pos)
+        # observation.extend(pos)
 
         return observation
     
@@ -139,7 +143,7 @@ class HsjaSkip(gym.Env):
         
         # Setting actions according to vanilla HSJA
         if self.nonadaptive:
-            self.action_delta = self.select_delta(ep.astensor(torch.tensor(self.dist)))
+            self.action_delta = self.select_delta(self.dist)
             self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps + 1), self.max_grad_evals]))
             self.action_step = 1/math.sqrt(self.reps + 1)
         
@@ -155,7 +159,7 @@ class HsjaSkip(gym.Env):
         self.best_advs, self.bin_steps = self.binary_step(ep.astensor(self.candidate), self.action_binary)
         
         # print(self.wanted_point.squeeze(0).numpy(), self.candidate.raw.squeeze(0).numpy())
-        self.distance = l2(self.wanted_point.squeeze(0).numpy(), self.best_advs.raw.squeeze(0).numpy())
+        self.distance = l2(self.wanted_point, self.best_advs.raw.squeeze(0).numpy())
         # self.closer = self.distance < self.source_norm
         # print(action, self.lastStep)
         # print(self.closer, self.is_adv)
@@ -189,8 +193,11 @@ class HsjaSkip(gym.Env):
             self.done = True
         
         # if self.done:
+        #     print(self.resets)
         #     print('finished in:', self.iter, 'steps and', self.reps, 'reps')
         #     print(self.dist,"|", self.gap)
+            
+        # print(self.action_delta, self.action_grad, self.action_step)    
 
         obs = self.observation()
         r = self.reward(self.rewarder)
@@ -210,8 +217,8 @@ class HsjaSkip(gym.Env):
         loc = self.dist / self.gap
         self.dist_moving = self.dist_moving * 0.2 + (loc) * 0.8
         slope = self.dist_moving - loc
-        pos = self.best_advs.squeeze(0).numpy()
-        pos = pos[::4,::4].flatten().tolist()
+        # pos = self.best_advs.squeeze(0).numpy()
+        # pos = pos[::4,::4].flatten().tolist()
         
         # Observation should also reflect the trajectory taken
         # by the binary search, grad approximation, and jump step
@@ -222,7 +229,7 @@ class HsjaSkip(gym.Env):
         observation.append(loc)
         observation.append(slope)
         observation.append(self.gain/self.gap)
-        observation.extend(pos)
+        # observation.extend(pos)
         # print(observation)
         # observation = np.append(observation, hist)
         # observation.append(self.gain)
@@ -340,7 +347,7 @@ class HsjaSkip(gym.Env):
         return (v + 2) / 4 + 0.1
     
     def scale_grad(self, v):
-        # Gradient estimation steps from [-2,2] to [100,1000]
+        # Gradient estimation steps from [-2,2] to [100,400]
         return (((v + 2) / 4) * 300 + 100).astype(int)
         
     def project(self, originals, perturbed, epsilons):
@@ -348,7 +355,7 @@ class HsjaSkip(gym.Env):
     
     def select_delta(self, dist):
         if self.reps == 1:
-            result = 0.1 * ep.ones_like(dist)
+            result = 0.1 * dist
         else:
             theta = 1 / (self.dim ** 2)
             result = theta * self.dist 
@@ -360,10 +367,14 @@ class HsjaSkip(gym.Env):
         reward = self.gain / self.gap
         return reward
 
+    # def reward2(self):
+    #     fraction = self.dist / self.gap
+    #     fraction_previous = (self.dist + self.gain) / self.gap
+    #     reward = (1 - fraction ** 0.5) ** 2 - (1 - fraction_previous ** 0.5) ** 2
+    #     return reward
+    
     def reward2(self):
-        fraction = self.dist / self.gap
-        fraction_previous = (self.dist + self.gain) / self.gap
-        reward = (1 - fraction ** 0.5) ** 2 - (1 - fraction_previous ** 0.5) ** 2
+        reward = 1/self.action_grad + 1/self.jump_steps + self.reward1()
         return reward
 
     def reward3(self):
@@ -375,10 +386,14 @@ class HsjaSkip(gym.Env):
         reward = 1/self.jump_steps + self.reward1()
         return reward
     
+    # def reward5(self):
+    #     reward = 0
+    #     if self.iter >= self.steps:
+    #         reward = abs(math.log(self.dist / self.gap))
+    #     return reward
+    
     def reward5(self):
-        reward = 0
-        if self.iter >= self.steps:
-            reward = abs(math.log(self.dist / self.gap))
+        reward = -self.action_grad/1000 + self.reward1()
         return reward
 
     # def reward5(self):
@@ -424,7 +439,7 @@ class HsjaSkip(gym.Env):
         
         originImg = self.dataset[originImgNr][0].to(device)
         originLabel = self.dataset[originImgNr][1]
-        
+               
         # startImg = self.dataset[1][0]
         # startLabel = self.dataset[1][1]
         # originImg = self.dataset[3][0]

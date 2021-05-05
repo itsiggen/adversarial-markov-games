@@ -48,8 +48,12 @@ def objective_bags(trial):
         seed=2,
         policy_kwargs=dict(net_arch=[dict(vf=[arch,arch], pi=[arch,arch])])
     )
+    
+    save_dir = 'mods/'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     model.learn(total_timesteps=int(1e6))
-    model.save("mods/bagsskip_" + str(trial.number) + "_model")
+    model.save(save_dir + "bagsskip_" + str(trial.number) + "_model.pt")
 
     # Evaluate the agent
     envv = gym.make("BagsSkip-v0", steps=1000, rewarder=1, dataset=dataset, train=False)#, nonadaptive=True)
