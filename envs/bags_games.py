@@ -183,7 +183,7 @@ class BagsGames(gym.Env):
             self.past = self.curr
             obs, r, done, info = self.step_int(action)
             self.roll_next()
-            return obs, r, done, info, 0, self.next
+            return obs, r, done, info, self.curr, self.next
         elif self.curr == 0:
             if self.next == 1:
                 # Adv follows int
@@ -191,12 +191,16 @@ class BagsGames(gym.Env):
             elif self.next == 2:
                 # Ben follows int
                 obs, r, done, info = self.step_ben(action)
-            return obs, r, done, info, self.curr, 0
+            self.next = 0
+            return obs, r, done, info, self.curr, self.next
             
     def step_int(self, action):
+        # Scale intercept
+        action = self.scale_intercept(action)
         if self.curr == 1:
             # Candidate remains adversarial only if outside the containment area
             candid = self.switch(self.lastStep, action)
+            # print(self.is_adv, candid)
             self.is_adv = np.logical_and(self.is_adv, candid)
           
             self.stats_is_adv.append(self.is_adv[0])
@@ -324,6 +328,7 @@ class BagsGames(gym.Env):
         probs = torch.nn.functional.softmax(logits, dim=1)
         # print(type(query))
         index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
+        # print(self.next, index+1)
         obs = self.queues.getState(index)
         # print(self.benign)
         # print(bucketIndex)
@@ -491,6 +496,10 @@ class BagsGames(gym.Env):
         # If non-adaptive, return actual model decision
         if self.adaptive == 0 or self.adaptive == 1:
             return True
+        if self.curr == 1 and step > 1:
+            print(step, action, self.iter)
+        # if self.curr == 2:
+        #     print(step, action, "BENIGN")
         return action < step
 
     def get_pair(self):

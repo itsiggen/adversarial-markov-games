@@ -95,10 +95,11 @@ def evaluate_rpolicy(
     episode_rewards, lengths, epsilons, acc = [], [], [], []
     
     agents = [interceptor, adversary, benign]
-    
-    # Reset once as VecEnv are reset automatically afterwards
-    obs = env.reset()
+
     for i in range(n_eval_episodes):
+        # Avoid double reset, as VecEnv are reset automatically
+        if not isinstance(env, VecEnv) or i == 0:
+            obs = env.reset()
         done, state = False, None
         curr, nxt = 1, 0
         agent_rewards = [0.0,0.0,0.0]
@@ -118,6 +119,8 @@ def evaluate_rpolicy(
             if curr == 0 and prev == 1:
                 epsilon.append(_info['epsilon'])
                 correct = _info['correct']
+            if done:
+                curr, nxt = 1, 0
         episode_rewards.append(agent_rewards)
         lengths.append(agent_steps)
         epsilons.append(epsilon)
@@ -127,5 +130,6 @@ def evaluate_rpolicy(
     mean_reward_adv = np.mean(episode_rewards[1])
     std_reward_adv = np.std(episode_rewards[1])
     mean_acc = np.mean(acc)
+    mean_eps = np.mean([i[-1] for i in epsilons])
 
-    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_acc
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, mean_acc

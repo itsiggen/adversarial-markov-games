@@ -1,15 +1,21 @@
 import numpy as np
 from tensorflow.keras.models import Sequential, load_model
 from statistics import mean
+import tensorflow as tf
 import time
 
 def l2(a,b):
     #L2 distance
     return np.linalg.norm(a-b)
 
-similarityModel = load_model('models/SIMILARITYmodel.h5')
+similarityModel = load_model('models/SIMILARITYmodel.h5', compile=False)
 def getSimilarityEncoding(query):
-    s =  similarityModel.predict(query)
+    # print(type(query))
+    # npt = query.numpy()
+    # tft = tf.convert_to_tensor(npt)
+    s =  similarityModel.predict(query, steps=1)
+    # z =  similarityModel.predict(tft, steps=1)
+    # print(l2(s, z))
     return s
 
 class Queues():
@@ -18,6 +24,7 @@ class Queues():
         self.threshold = threshold
         self.sizeState = sizeState        
         self.nrQueues = nrQueues
+        self.adds = 0
         self.lastQueueUsed = [i for i in range(nrQueues)]
         for i in range(nrQueues):
             self.queues.append(Queue(self.sizeState))
@@ -25,14 +32,25 @@ class Queues():
     # assign to queue based on minimum similarity encoding
     def addQuery(self, query, logits):
         simEnc = getSimilarityEncoding(query)
-        a = []
-        for i, queue in enumerate(self.queues):
-            a.append(l2(queue.getLastEncoding(), simEnc))
-        if a[np.argmin(a)] < self.threshold:
-            index = np.argmin(a)
+        # a = []
+        # for i, queue in enumerate(self.queues):
+        #     a.append(l2(queue.getLastEncoding(), simEnc))
+        # # mb online update of threshold
+        # if a[np.argmin(a)] < self.threshold:
+        #     index = np.argmin(a)
+        # else:
+        #     index = 1
+        if self.adds == 0:
+            index = 0
+        elif self.adds == 1:
+            index = 1
         else:
-            index = np.argmax(a)
+            t = l2(self.queues[0].getLastEncoding(), simEnc)
+            index = 0 if t < self.threshold else 1
         self.queues[index].addQueryToQueue(query, logits, simEnc)
+        self.adds += 1
+        # if self.adds > 2:
+        #     print(l2(self.queues[index].encodings[-2], simEnc))
         return index
 
     def getState(self, index):
@@ -95,6 +113,7 @@ class Queue():
         
         # if len(self.queryMemory) > 1:
         #     print(l2(self.queryMemory[-1], self.queryMemory[-2]))
+        # print(self.stepsize[-1])
         
     def setStartOrigin(self):
         self.start = np.argmax(np.bincount(self.starts))
@@ -112,6 +131,11 @@ class Queue():
         if len(self.encodings) == 0:
             return 0
         return self.encodings[-1]
+    
+    def getLastQuery(self):
+        if len(self.queryMemory) == 0:
+            return 0
+        return self.queryMemory[-1]
     
     def getLastStep(self):
         return self.stepsize[-1]
