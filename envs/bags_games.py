@@ -18,7 +18,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 import math
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.seterr(invalid='raise')
 
 class BagsGames(gym.Env):
@@ -33,6 +33,7 @@ class BagsGames(gym.Env):
         train = True,
         rewarder = 1,
         dataset = None,
+        intercept = 1,
         device = 'cpu',
         seed = 2,
         tensorboard = False,
@@ -77,6 +78,7 @@ class BagsGames(gym.Env):
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
+        self.intercept = intercept
     
         self.done = False
 
@@ -90,7 +92,7 @@ class BagsGames(gym.Env):
         return (v + 2) / 20
     
     def scale_intercept(self, v):
-        return (v + 2) / 4
+        return ((v + 2) / 4) * self.intercept
     
     def reset(self):
         """ Initialize new targeted attack
@@ -101,7 +103,7 @@ class BagsGames(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
@@ -307,7 +309,7 @@ class BagsGames(gym.Env):
         # wher the final decision on is_adv is made
             
         obs, index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index))
+        r = self.reward_int(self.queues.getStepSizeQueue(index), self.rewarder)
         info = self.get_info()
         # Set state to adversary
         self.curr = 1
@@ -318,7 +320,7 @@ class BagsGames(gym.Env):
         candidate, self.label = self.get_benign(action)
         self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1))
         obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index))
+        r = self.reward_int(self.queues.getStepSizeQueue(index), self.rewarder)
         info = self.get_info()
         # Set state to benign
         self.curr = 2
@@ -407,26 +409,22 @@ class BagsGames(gym.Env):
         np.clip(candidate, 0., 1., out=candidate)
         return np.float32(candidate)
 
-    def reward_int(self, stepsize):
+    def reward_int(self, stepsize, reward_nr):
         averageStepsize = np.mean(np.asarray(stepsize))
-
+        #print(averageStepsize)
         if self.past == 1:
-            #print(averageStepsize)
-            # r = abs(math.log(averageStepsize,10))#-queryCounter/1000
-            # r = 10*averageStepsize
+            if reward_nr == 1:
+                # Reward staying close to successive best_advs
+                r = abs(math.log((self.gap*0.1 + l2(self.starting_point, self.best_advs)) / self.gap)) * 0.1
+            elif reward_nr == 2:
+                # reward smalls steps
+                r = abs(math.log(averageStepsize,10))
+            elif reward_nr == 3:
+                # reward big steps
+                r = 10*averageStepsize
             # r = abs(math.log(abs(averageStepsize/self.step_ref - 1)),10)
             # r = abs(math.log(np.linalg.norm(diff), 10))
-            # if self.done:
-            #     r = l2(self.best_advs, self.wanted_point).numpy()*0.2
-            #     print(r)
-            #     print("DOOONE")
-            # else:
-            #     r = 0
-            # r = abs(math.log(self.gap - l2(self.starting_point, self.best_advs).numpy()) / self.gap) * 0.2
-            # Reward staying close to successive best_advs
-            r = abs(math.log(self.gap - l2(self.starting_point, self.best_advs) / self.gap)) * 0.2
-            # print(self.gain.raw)
-            # r = - self.gain
+
         elif self.past == 2:
             # print(self.check_bn)
             r = 0.5 if self.check_bn else - 0.5
@@ -497,8 +495,8 @@ class BagsGames(gym.Env):
         # If non-adaptive, return actual model decision
         if self.adaptive == 0 or self.adaptive == 1:
             return True
-        if self.curr == 1 and step > 1:
-            print(step, action, self.iter)
+        # if self.curr == 1 and step > 1:
+        #     print(step, action, self.iter)
         # if self.curr == 2:
         #     print(step, action, "BENIGN")
         return action < step

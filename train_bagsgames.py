@@ -3,45 +3,62 @@ import gym
 import os
 import pandas as pd
 import numpy as np
+import optuna
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rpolicy
 from envs.bags_games import BagsGames
 
-def train(args):
+def objective(trial):
     """
     Train and save the adversary and intereceptor agents for BAGS
     :param args: (ArgumentParser) the input arguments
     """
     # timesteps = args.timesteps
+    # steps = args.steps
+    # adaptive = args.adaptive
+    # ratio = args.ratio
+    # defended = args.defended
+    # seed = args.seed
+    # name = args.name
+    # logdir = "./logs/"
+    
     timesteps = int(4e5)
-    steps = args.steps
-    adaptive = args.adaptive
-    ratio = args.ratio
-    defended = args.defended
-    seed = args.seed
-    name = args.name
+    steps = 1000
+    adaptive = 2
+    ratio = 0.5
+    defended = False
+    seed = 2
+    name = 'bags'
     logdir = "./logs/"
+    
+    
+    lr = trial.suggest_float('lr',0.00001, 0.001, step=0.00001)
+    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
+    ent_coef = trial.suggest_float('ent_coef', 0, 1e-4, step=1e-4)
+    inter = trial.suggest_categorical('intercept', [1,2,3,5,8,10])
+    reward = trial.suggest_categorical('reward', [1,2,3])
 
     transform=transforms.ToTensor()
     dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     
     # Create environment
-    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, seed=seed)
+    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, rewarder=reward, defended=defended, intercept = inter, seed=seed)
     total_timesteps = timesteps
     
     interceptor = RPPO(policy="MlpPolicy",
                 env=env,
                 agent='interceptor',
                 n_steps=steps,
-                learning_rate=0.00039,
-                gamma=0.92,
+                learning_rate=lr, # 0.00039
+                gamma=gamma, # 0.92
                 tensorboard_log=None,
-                ent_coef = 0.0001,
+                ent_coef = ent_coef, # 0.0001
                 verbose=0,
                 seed=seed,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
+    
     
     adversary = RPPO(policy="MlpPolicy",
                 env=env,
@@ -98,26 +115,28 @@ def train(args):
     adversary.save("adversary_model")
     
     # Make evaluation env
-    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, seed=seed)
+    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rewarder=reward, intercept = inter, seed=seed)
     # Load the trained agents
     interceptor = RPPO.load("interceptor_model", envv, "interceptor")
     adversary = RPPO.load("adversary_model", envv, "adversary")
     benign = RandomAgent(env=envv)
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, mean_acc= evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=10)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, mean_acc= evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
     res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, mean_acc])
     # np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
     print(res)
     
-    df = pd.DataFrame({'mean_reward_int': mean_rint, 'std_reward_int': std_rint, 'mean_reward_adv': mean_radv,
-                       'std_reward_adv': std_radv, 'mean_eps': mean_eps, 'mean_acc': mean_acc}, index=[0])
-    fd = pd.DataFrame(epsilons)
-    # file_path = os.path.join(logdir, 'bags_')
-    path1 = logdir + name + '.csv'
-    path2 = logdir + name + '_epsilons.csv'
-    df.to_csv(path1, index=False, float_format='%.3f')
-    fd.to_csv(path2, index=False, float_format='%.3f')
+    # df = pd.DataFrame({'mean_reward_int': mean_rint, 'std_reward_int': std_rint, 'mean_reward_adv': mean_radv,
+    #                    'std_reward_adv': std_radv, 'mean_eps': mean_eps, 'mean_acc': mean_acc}, index=[0])
+    # fd = pd.DataFrame(epsilons)
+    # # file_path = os.path.join(logdir, 'bags_')
+    # path1 = logdir + name + '.csv'
+    # path2 = logdir + name + '_epsilons.csv'
+    # df.to_csv(path1, index=False, float_format='%.3f')
+    # fd.to_csv(path2, index=False, float_format='%.3f')
+    
+    return mean_eps
     
 def check_full(agents):
     for i in range(2):
@@ -127,11 +146,11 @@ def check_full(agents):
             agents[i].reset_buffer()
 
 def reset():
-    return False, 1, 0, 0
+    return False, 1, 0, 0    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(5e6), type=int, help="Total number of timesteps to run for")
+    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
     parser.add_argument('--steps', default=int(1e3), type=int, help="Number of steps for each attack episode")
     parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
@@ -139,4 +158,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("bags"), type=str, help="Name for experiment")
     args = parser.parse_args()
-    train(args)
+    # Create a new optuna study.
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=100)
+    # train(args)
