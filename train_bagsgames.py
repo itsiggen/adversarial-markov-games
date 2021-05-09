@@ -28,74 +28,74 @@ def train(args):
     dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     
     # Create environment
-    # env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, seed=seed)
-    # total_timesteps = timesteps
+    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, seed=seed)
+    total_timesteps = timesteps
     
-    # interceptor = RPPO(policy="MlpPolicy",
-    #             env=env,
-    #             agent='interceptor',
-    #             n_steps=steps,
-    #             learning_rate=0.00039,
-    #             gamma=0.92,
-    #             tensorboard_log=None,
-    #             ent_coef = 0.0001,
-    #             verbose=0,
-    #             seed=seed,
-    #             policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
+    interceptor = RPPO(policy="MlpPolicy",
+                env=env,
+                agent='interceptor',
+                n_steps=steps,
+                learning_rate=0.00039,
+                gamma=0.92,
+                tensorboard_log=None,
+                ent_coef = 0.0001,
+                verbose=0,
+                seed=seed,
+                policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
-    # adversary = RPPO(policy="MlpPolicy",
-    #             env=env,
-    #             agent='adversary',
-    #             n_steps=steps,
-    #             learning_rate=0.00056,
-    #             gamma=0.89,
-    #             tensorboard_log=None,
-    #             # ent_coef = ent_coef,
-    #             verbose=0,
-    #             seed=seed,
-    #             policy_kwargs=dict(net_arch=[8,8]))
+    adversary = RPPO(policy="MlpPolicy",
+                env=env,
+                agent='adversary',
+                n_steps=steps,
+                learning_rate=0.00056,
+                gamma=0.89,
+                tensorboard_log=None,
+                # ent_coef = ent_coef,
+                verbose=0,
+                seed=seed,
+                policy_kwargs=dict(net_arch=[8,8]))
     
-    # benign = RandomAgent(env=env)
+    benign = RandomAgent(env=env)
       
-    # agents = [interceptor, adversary, benign]
+    agents = [interceptor, adversary, benign]
     
     
-    # for agent in agents:
-    #     agent.setup_learn()
-    # obs = env.reset()
-    # agents[0].set_last(obs, False)
-    # done = False
-    # curr, nxt = 1, 0
-    # n_steps = 0
+    for agent in agents:
+        agent.setup_learn()
+    obs = env.reset()
+    agents[0].set_last(obs, False)
+    done = False
+    curr, nxt = 1, 0
+    n_steps = 0
         
-    # for timestep in range(total_timesteps):
-    #     # Check if a rollout buffer has been filled and train
-    #     check_full(agents)
-    #     # Store previous move
-    #     prev = curr
-    #     # next agent moves
-    #     # print(nxt)
-    #     obs, reward, done, info, curr, nxt = agents[nxt].move()
-    #     n_steps += 1
+    for timestep in range(total_timesteps):
+        # Check if a rollout buffer has been filled and train
+        check_full(agents)
+        # Store previous move
+        prev = curr
+        # next agent moves
+        # print(nxt)
+        obs, reward, done, info, curr, nxt = agents[nxt].move()
+        n_steps += 1
         
-    #     if curr == 0:
-    #         if n_steps == 1:
-    #             # env has been just reset
-    #             agents[1].set_last(obs, False)
-    #         else:
-    #             agents[prev].proceed(obs, reward, done, info)
-    #     elif curr == 1 or curr == 2:
-    #         if done:
-    #             term_obs = agents[1].env.get_obs()
-    #             agents[0].proceed(term_obs, reward, done, info)
-    #             done, curr, nxt, n_steps = reset()
-    #         else:
-    #             agents[0].proceed(obs, reward, done, info)
+        if curr == 0:
+            if n_steps == 1:
+                # env has been just reset
+                agents[1].set_last(obs, False)
+            else:
+                agents[prev].proceed(obs, reward, done, info)
+        elif curr == 1 or curr == 2:
+            if done:
+                term_obs = agents[1].env.get_obs()
+                agents[0].proceed(term_obs, reward, done, info)
+                done, curr, nxt, n_steps = reset()
+            else:
+                agents[0].proceed(obs, reward, done, info)
 
-    # # Save the trained agents
-    # print("Saving models...")
-    # interceptor.save("interceptor_model")
-    # adversary.save("adversary_model")
+    # Save the trained agents
+    print("Saving models...")
+    interceptor.save("interceptor_model")
+    adversary.save("adversary_model")
     
     # Make evaluation env
     envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, seed=seed)

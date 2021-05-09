@@ -18,7 +18,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.seterr(invalid='raise')
 
 class BagsGames(gym.Env):
@@ -33,6 +33,7 @@ class BagsGames(gym.Env):
         train = True,
         rewarder = 1,
         dataset = None,
+        device = 'cpu',
         seed = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
@@ -65,14 +66,14 @@ class BagsGames(gym.Env):
         self.dataset = dataset
         if defended:
             self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt'))
             self.mode.eval()
         else:
             self.mode = Net()
             self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
             self.mode.eval()
 
-        self.model = PyTorchModel(self.mode, bounds=(0, 1))
+        self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
