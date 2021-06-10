@@ -7,13 +7,14 @@ from torchvision import datasets, transforms
 from utils.evaluation import evaluate_policy
 from envs.boundary_skip import BoundarySkip
 from envs.bags_skip import BagsSkip
+import random
 
 """
 Train and save the DQN model for the boundary attack env
 :param args: (ArgumentParser) the input arguments
 """
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
 
 # Create environment
 env = gym.make("BoundarySkip-v0", steps=1000, rewarder=1, dataset=dataset)

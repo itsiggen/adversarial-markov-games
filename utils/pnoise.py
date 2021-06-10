@@ -13,18 +13,30 @@ def generate_fractal_noise_2d(shape, res, octaves=1, persistence=0.5):
     return noise
 
 def generate_perlin_noise_2d(shape, res, seed=None):
-
-    lin = np.linspace(0, res, shape, endpoint=False)
-    x, y = np.meshgrid(lin, lin)
-    return perlin(x, y, seed)
-
-# https://stackoverflow.com/questions/42147776/producing-2d-perlin-noise-with-numpy
-def perlin(x,y,seed):
-    # permutation table
     if seed is not None:
         np.random.seed(seed)
     else:
         np.random.seed()
+    lin = np.linspace(0, res, shape, endpoint=False)
+    x, y = np.meshgrid(lin, lin)
+    return perlin(x, y)
+
+# def generate_perlin_noise_3d(shape, res, channels, seed=None):
+#     if seed is not None:
+#         np.random.seed(seed)
+#     else:
+#         np.random.seed()
+#     lin = np.linspace(0, res, shape, endpoint=False)
+#     x, y = np.meshgrid(lin, lin)
+#     a = perlin(x, y)
+#     b = perlin(x, y)
+#     c = perlin(x, y)
+#     return a, b, c
+
+
+# https://stackoverflow.com/questions/42147776/producing-2d-perlin-noise-with-numpy
+def perlin(x,y):
+    # permutation table
     p = np.arange(256,dtype=int)
     np.random.shuffle(p)
     p = np.stack([p,p]).flatten()
@@ -64,16 +76,25 @@ def gradient(h,x,y):
 
 def test():
     # np.random.seed(0)
-    noise = generate_perlin_noise_2d((28, 28), 5)
-    plt.imshow(noise, cmap='gray', interpolation='lanczos')
-    plt.colorbar()
+    noise = generate_perlin_noise_2d((28, 28), 5, 1)
+    noise1 = generate_perlin_noise_2d((28, 28), 5, 2)
+    noise2 = generate_perlin_noise_2d((28, 28), 5, 3)
+    noise /= np.linalg.norm(noise)
+    noise1 /= np.linalg.norm(noise1)
+    noise2 /= np.linalg.norm(noise2)
+    
+    asd = np.stack(noise, noise1, noise2)
+    asd /= np.linalg.norm(asd)
+    
+    # plt.imshow(noise, cmap='gray', interpolation='lanczos')
+    # plt.colorbar()
 
     # np.random.seed(0)
     # noise = generate_fractal_noise_2d((28, 28),25)
     # plt.figure()
     # plt.imshow(noise, cmap='gray', interpolation='lanczos')
     # plt.colorbar()
-    plt.show()
+    # plt.show()
  
 # linx = np.linspace(0, 496, 28, endpoint=False)
 # liny = np.linspace(0, 496, 28, endpoint=False)
@@ -104,3 +125,13 @@ def test():
 # b = np.linalg.norm(a)
 
 # c = pen.create_perlin_noise(28, color=False, normalize=False, freq=5).squeeze(0)
+
+# noise = generate_perlin_noise_2d(32, 5, 1)
+# noise /= np.linalg.norm(noise)
+# noise1 = generate_perlin_noise_2d(32, 5, 2)
+# noise1 /= np.linalg.norm(noise1)
+# noise2 = generate_perlin_noise_2d(32, 5, 3)
+# noise2 /= np.linalg.norm(noise2)
+    
+# asd = np.stack([noise, noise1, noise2])
+# asd /= np.linalg.norm(asd)

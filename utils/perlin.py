@@ -91,13 +91,13 @@ def create_perlin_noise(px, seed=None, color=True, batch_size=1, normalize=True,
         np.random.seed()
 
     if color:
-        output = np.empty((batch_size, px, px, 3), dtype=np.float32)
+        output = np.empty((batch_size, 3, px, px), dtype=np.float32)
         # Draw 3 separate Perlin samples per image, one for each channel
         batch = perlin_batch(px, n_samples=3 * batch_size, freq=freq, precalc_fade=precalc_fade)
         for i in range(batch_size):
-            output[i, :, :, 0] = batch[i * 3]
-            output[i, :, :, 1] = batch[i * 3 + 1]
-            output[i, :, :, 2] = batch[i * 3 + 2]
+            output[i, 0, :, :] = batch[i * 3]
+            output[i, 1, :, :] = batch[i * 3 + 1]
+            output[i, 2, :, :] = batch[i * 3 + 2]
     else:
         output = np.empty((batch_size, px, px), dtype=np.float32)
         # Draw 1 Perlin sample per image and repeat it

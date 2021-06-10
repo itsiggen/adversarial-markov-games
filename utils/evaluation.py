@@ -39,7 +39,7 @@ def evaluate_policy(
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
-    episode_rewards, episode_lengths, epsilons, acc = [], [], [], []
+    episode_rewards, episode_lengths, iterations, epsilons, start, acc = [], [], [], [], [], []
     for i in range(n_eval_episodes):
         # Avoid double reset, as VecEnv are reset automatically
         if not isinstance(env, VecEnv) or i == 0:
@@ -47,6 +47,7 @@ def evaluate_policy(
         done, state = False, None
         episode_reward = 0.0
         episode_length = 0
+        iters = []
         epsilon = []
         while not done:
             action, state = model.predict(obs, state=state, deterministic=deterministic)
@@ -57,22 +58,24 @@ def evaluate_policy(
             if callback is not None:
                 callback(locals(), globals())
             episode_length += 1
+            iters.append(_info['iters'])
             epsilon.append(_info['epsilon'])
+            gap = _info['gap']
             correct = _info['correct']
-            if render:
-                env.render()
         episode_rewards.append(episode_reward)
         episode_lengths.append(episode_length)
+        iterations.append(iters)
         epsilons.append(epsilon)
+        start.append(gap)
         acc.append(correct)
     mean_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
     mean_acc = np.mean(acc)
-    if reward_threshold is not None:
-        assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
-    if return_episode_rewards:
-        return episode_rewards, episode_lengths
-    return mean_reward, std_reward, epsilons, mean_acc
+    mean_eps = np.mean([i[-1] for i in epsilons])
+    start_eps = np.mean(gap)
+    mean_length = np.mean(episode_lengths)
+    
+    return mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, mean_acc
 
 def evaluate_rpolicy(
     interceptor,
@@ -112,6 +115,7 @@ def evaluate_rpolicy(
             obs, reward, done, _info, curr, nxt = env.step(action)
             # print(curr, nxt)
             agent_rewards[prev] += reward
+            print(agent_rewards)
             # if curr == 0:
             #     elif curr = 1:
             #         else:
@@ -125,11 +129,80 @@ def evaluate_rpolicy(
         lengths.append(agent_steps)
         epsilons.append(epsilon)
         acc.append(correct)
-    mean_reward_int = np.mean(episode_rewards[0])
-    std_reward_int = np.std(episode_rewards[0])
-    mean_reward_adv = np.mean(episode_rewards[1])
-    std_reward_adv = np.std(episode_rewards[1])
+    mean_reward_int = np.mean([i[0] for i in episode_rewards]) #WRONG -> [i[0] for i in episode_rewards]
+    std_reward_int = np.std([i[0] for i in episode_rewards])
+    mean_reward_adv = np.mean([i[1] for i in episode_rewards])
+    std_reward_adv = np.std([i[1] for i in episode_rewards])
     mean_acc = np.mean(acc)
     mean_eps = np.mean([i[-1] for i in epsilons])
+    start_eps = np.mean([i[0] for i in epsilons])
 
-    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, mean_acc
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, start_eps, mean_acc
+
+def evaluate_rdpolicy(
+    interceptor,
+    adversary,
+    benign,
+    env: Union[gym.Env, VecEnv],
+    n_eval_episodes: int = 10,
+    deterministic: bool = True,
+    callback: Optional[Callable] = None,
+    reward_threshold: Optional[float] = None,
+) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
+    """
+    Similar to evaluate_policy, but for competitive envs and returns average reward.
+    This is made to work only with one env.
+
+    """
+    if isinstance(env, VecEnv):
+        assert env.num_envs == 1, "You must pass only one environment when using this function"
+
+    episode_rewards, lengths, epsilons, acc = [], [], [], []
+    
+    agents = [interceptor, adversary, benign]
+
+    for i in range(n_eval_episodes):
+        # Avoid double reset, as VecEnv are reset automatically
+        if not isinstance(env, VecEnv) or i == 0:
+            obs = env.reset()
+        done, state = False, None
+        curr, nxt = 1, 0
+        agent_rewards = [0.0,0.0,0.0]
+        agent_steps = [0,0,0]
+        epsilon = []
+        while not done:
+            prev = curr
+            action, state = agents[nxt].predict(obs, deterministic=deterministic)
+            # loading the model returns an extra dim, hence squeeze
+            obs, reward, done, _info, curr, nxt = env.step(action)
+            # print(curr, nxt)
+            if curr == 0:
+                if nxt == 0:
+                    agent_rewards[0] += reward
+                elif nxt == 1:
+                    agent_rewards[1] += reward
+            elif curr == 1 or curr == 2:
+                agent_rewards[0] += reward
+                
+            agent_steps[curr] += 1
+            if curr == 0 and prev == 1:
+                epsilon.append(_info['epsilon'])
+                correct = _info['correct']
+            # print(env.iter, done)
+            if done:
+                # print(done)
+                curr, nxt = 1, 0
+        episode_rewards.append(agent_rewards)
+        lengths.append(agent_steps)
+        epsilons.append(epsilon)
+        acc.append(correct)
+        # print(i)
+    mean_reward_int = np.mean([i[0] for i in episode_rewards]) #WRONG -> [i[0] for i in episode_rewards]
+    std_reward_int = np.std([i[0] for i in episode_rewards])
+    mean_reward_adv = np.mean([i[1] for i in episode_rewards])
+    std_reward_adv = np.std([i[1] for i in episode_rewards])
+    mean_acc = np.mean(acc)
+    mean_eps = np.mean([i[-1] for i in epsilons])
+    start_eps = np.mean([i[0] for i in epsilons])
+
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, start_eps, mean_acc

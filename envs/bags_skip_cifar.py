@@ -8,11 +8,11 @@ from foolbox.tensorboard import TensorBoard
 from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
-from utils.utils import flatten, atleast_kd
 from utils.buckets import l2
-import utils.pnoise as pn
-from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
+# import utils.pnoise as pn
+import utils.perlin as pn
+from models.loader import load
+from torchvision import transforms
 from collections import deque
 import matplotlib.pyplot as plt
 import math
@@ -20,7 +20,7 @@ import math
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.seterr(invalid='raise')
 
-class BagsSkip(gym.Env):
+class BagsSkipCIFAR(gym.Env):
     def __init__(
         self,
         steps: int = 1000,
@@ -30,12 +30,11 @@ class BagsSkip(gym.Env):
         nonadaptive = False,
         train = True,
         rewarder = 1,
-        scale = 20,
+        scale = 5,
         dataset = None,
-        seed = 2,
         tensorboard = False
         ):
-        super(BagsSkip, self).__init__()  
+        super(BagsSkipCIFAR, self).__init__()  
 
         # Boundary Attack inits
         self.steps = steps
@@ -45,34 +44,26 @@ class BagsSkip(gym.Env):
         self.rewarder = rewarder
         self.scale = scale
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
         # Observation space
         self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
 
-        # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
-        self.dataset = dataset
-        if defended:
-            self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
-            self.mode.eval()
-        else:
-            self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-            self.mode.eval()
-
-        self.model = PyTorchModel(self.mode, bounds=(0, 1))
+        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
+        self.dataset, model = load('CIFAR', defended)
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
+        self.model = PyTorchModel(model, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
-        self.dim = 28
+        self.dim = 32
+        self.channels = 3
         self.resets = 0
-    
         self.done = False
 
     def scale_perlin(self, v):
-        act = ((v + 2) / 4) * (self.dim - 2) + 1
-        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
+        act = ((v + 2) / 4) * (self.dim - 3) + 1
+        return np.nan_to_num(act, nan=0.0, posinf=self.dim-2, neginf=0.0)
 
     def scale_mask(self, v):
         return (v + 2) / 2
@@ -87,12 +78,13 @@ class BagsSkip(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 1: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
         self.dist = self.gap
+        # print(self.dist)
         # Distance between successive steps
         self.diff = np.float32(0.0)
         # Moving average of the closing distance
@@ -120,8 +112,9 @@ class BagsSkip(gym.Env):
             raise ValueError("no starting_point provided")
         else:
             self.best_advs = self.starting_point
-
-        is_adv  = self.is_adversarial(ep.astensor(torch.tensor(self.best_advs).unsqueeze(0).unsqueeze(1)))
+        
+        cand = self.normalize(torch.tensor(self.best_advs))
+        is_adv  = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
 
@@ -154,10 +147,12 @@ class BagsSkip(gym.Env):
             print("nan")
         self.iter += 1
         
-        self.converged = self.dist < self.epsilon
-        if self.converged or self.iter >= self.steps:
+        # self.converged = self.dist < self.epsilon
+        # if self.converged or self.iter >= self.steps:
+        if self.iter >= self.steps:
             self.tb.close()
             self.done = True
+            # print(self.dist)
         
         # Scale actions to proper values
         self.action_perlin = self.scale_perlin(action[0])
@@ -166,32 +161,26 @@ class BagsSkip(gym.Env):
         self.action_source = self.scale_step(action[3])
 
         # calculate mask
+        # if self.iter == 1 or self.iter % 10 == 0:
         mask = np.abs(self.best_advs - self.wanted_point)
         mask /= np.max(mask)
         self.x_mask = mask
-
-        # # calc step sizes
-        # source_step = 0.002
-        # spherical_step = 0.05
-        # if self.step_loop_current >= self.step_loop_max:
-        #     self.step_loop_current = 0
-        # scale = (1. - self.step_loop_current / self.step_loop_max) + 0.3
-        # source_step_size = source_step * scale
-        # spherical_step_size = spherical_step * scale
-        # self.step_loop_current += 1
         
         # Setting actions according to vanilla BAGS    
         if self.nonadaptive:
+            # check
             scale = (1. - min(self.na_batch/50, 1)) + 0.3
+            # print(scale)
             self.action_perlin = 5
-            self.action_mask = 1
+            self.action_mask = 0.5
             self.action_spherical = scale * self.spherical_step
             self.action_source = scale * self.source_step
         
         # generate new advarsarial candidate
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
                                                      self.action_spherical, self.action_perlin)
-        self.is_adv = self.is_adversarial(ep.astensor(torch.tensor(self.candidate).unsqueeze(0).unsqueeze(1)))
+        cand = self.normalize(torch.tensor(self.candidate))
+        self.is_adv = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
         self.stats_is_adv.append(self.is_adv.numpy()[0])
         
         self.distance = l2(self.wanted_point, self.candidate)
@@ -221,12 +210,12 @@ class BagsSkip(gym.Env):
                 self.na_batch = 1
             self.gain = np.float32(0)
         
-        # # TODO: potentially reward shorter episodes
+        # TODO: potentially reward shorter episodes
         # is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
         # if is_best_adv and is_within_eps:
         #     self.done = True
         #     self.success = True
-        #     # print('success')
+        #     print('success')
         
         self.unnormalized_source_direction = self.wanted_point - self.best_advs
         self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
@@ -283,9 +272,15 @@ class BagsSkip(gym.Env):
             
         mask = mask ** self.action_mask
         # rnd_normal = pn.create_perlin_noise(self.dim, color=False, freq=self.action_perlin, normalize=False).squeeze(0)
-        rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
-        rnd_normal /= np.linalg.norm(rnd_normal)
-        sampling_dir = rnd_normal
+        # rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
+        # rnd_normal /= np.linalg.norm(rnd_normal)
+        # rnd_normal1 = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
+        # rnd_normal1 /= np.linalg.norm(rnd_normal1)
+        # rnd_normal2 = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
+        # rnd_normal2 /= np.linalg.norm(rnd_normal2)
+        # # triple stack noise tensor
+        # sampling_dir = np.stack((rnd_normal, rnd_normal1, rnd_normal2))
+        sampling_dir = np.squeeze(pn.create_perlin_noise(self.dim, freq=perlin_freq))
 
         # calculate candidate on sphere
         dot = np.vdot(sampling_dir, self.source_direction)
@@ -319,20 +314,20 @@ class BagsSkip(gym.Env):
             reward = (self.gain / self.gap) * self.reward_mult
         else:
             reward = 0
-        return reward
+        return reward*10
 
     def reward2(self):
         if self.gain > 0:
             reward = (self.gain / self.gap) / (self.reward_mult + 1)
         else:
             reward = 0
-        return reward
+        return reward*10
     
     def reward3(self):
         fraction = self.dist / self.gap
         fraction_previous = (self.dist + self.gain) / self.gap
         reward = (1 - fraction ** 0.5) ** 2 - (1 - fraction_previous ** 0.5) ** 2
-        return reward
+        return reward*10
 
     def reward4(self):
         reward = math.sqrt(self.iter) * self.reward2()
@@ -368,12 +363,12 @@ class BagsSkip(gym.Env):
         originImgNr = random.randint(*self.indices)
         
         # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.dataset[originImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[originImgNr][1]:
+        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
             originImgNr = random.randint(*self.indices)
         
         # Make sure starting and original images do not belong to the same class, and starting is correctly classified
         while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.dataset[startImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[startImgNr][1]:
+            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
             startImgNr = random.randint(*self.indices)
         
         startImg = self.dataset[startImgNr][0].to(device)

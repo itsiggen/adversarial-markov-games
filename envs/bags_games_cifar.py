@@ -10,10 +10,10 @@ from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import Queues, l2
-import utils.pnoise as pn
+import utils.perlin as pn
+from models.loader import load
+from torchvision import transforms
 from utils.utils import get_is_adversarial
-from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
 from collections import deque
 import matplotlib.pyplot as plt
 import math
@@ -21,7 +21,7 @@ import math
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.seterr(invalid='raise')
 
-class BagsGames(gym.Env):
+class BagsGamesCIFAR(gym.Env):
     def __init__(
         self,
         steps: int = 1000,
@@ -32,15 +32,11 @@ class BagsGames(gym.Env):
         ratio_benign = 0.5,
         train = True,
         rewarder = 1,
-        scale = 20,
         dataset = None,
         intercept = 1,
-        device = 'cpu',
-        seed = 2,
         tensorboard = False,
-        update_stats_every_k: int = 10
         ):
-        super(BagsGames, self).__init__()  
+        super(BagsGamesCIFAR, self).__init__()  
 
         # Boundary Attack inits
         self.steps = steps
@@ -49,9 +45,7 @@ class BagsGames(gym.Env):
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
         self.ratio_benign = ratio_benign
         self.rewarder = rewarder
-        self.scale = scale
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -59,24 +53,18 @@ class BagsGames(gym.Env):
             'interceptor': spaces.Box(low=0, high=1, shape=(300,), dtype=np.float32)
             })
 
-        # Actions space
+        # Action space
         self.action_spaces = spaces.Dict({
             'adversary': spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
-        # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
-        self.dataset = dataset
-        if defended:
-            self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt'))
-            self.mode.eval()
-        else:
-            self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-            self.mode.eval()
+        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
+        self.dataset, model = load('CIFAR', defended)
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
 
-        self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
+        self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
@@ -85,14 +73,13 @@ class BagsGames(gym.Env):
         self.done = False
 
     def scale_perlin(self, v):
-        act = ((v + 2) / 4) * (self.dim - 2) + 1
-        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
+        return ((v + 2) / 4) * (self.dim - 2) + 1
 
     def scale_mask(self, v):
         return (v + 2) / 2
 
     def scale_step(self, v):
-        return (v + 2) / self.scale
+        return (v + 2) / 20
     
     def scale_intercept(self, v):
         return ((v + 2) / 4) * self.intercept
@@ -127,7 +114,7 @@ class BagsGames(gym.Env):
         self.step_moving = 0.1
         self.gain_moving = 0.1
         # Initialize query queues
-        self.queues = Queues(nrQueues=2, dataset='mnist')
+        self.queues = Queues(nrQueues=2)
         # Target epsilon
         self.epsilon = 1
         self.correct = []
@@ -277,9 +264,8 @@ class BagsGames(gym.Env):
         # Remove nan and inf from actions
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         
-        # self.converged = self.dist < self.epsilon
-        # if self.converged or self.iter >= self.steps:
-        if self.iter >= self.steps:
+        self.converged = self.dist < self.epsilon
+        if self.converged or self.iter >= self.steps:
             self.tb.close()
             self.done = True
         
@@ -382,9 +368,10 @@ class BagsGames(gym.Env):
             
         mask = mask ** self.action_mask
         # rnd_normal = pn.create_perlin_noise(self.dim, color=False, freq=self.action_perlin, normalize=False).squeeze(0)
-        rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
-        rnd_normal /= np.linalg.norm(rnd_normal)
-        sampling_dir = rnd_normal
+        # rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
+        # rnd_normal /= np.linalg.norm(rnd_normal)
+        # sampling_dir = rnd_normal
+        sampling_dir = np.squeeze(pn.create_perlin_noise(self.dim, freq=perlin_freq))
 
         # calculate candidate on sphere
         dot = np.vdot(sampling_dir, self.source_direction)
@@ -557,5 +544,5 @@ class BagsGames(gym.Env):
                 "benigns" : self.queries,
                 "epsilon" : self.dist,
                 "correct" : correct,
-                "gap" : self.gap}
+                "success" : self.success}
         return info

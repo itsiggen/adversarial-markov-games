@@ -64,18 +64,18 @@ def objective(trial):
                 env=env,
                 agent='adversary',
                 n_steps=steps,
-                learning_rate=0.00056,
-                gamma=0.89,
+                learning_rate=0.00039,
+                gamma=0.92,
                 tensorboard_log=None,
                 # ent_coef = ent_coef,
                 verbose=0,
                 seed=seed,
-                policy_kwargs=dict(net_arch=[8,8]))
+                policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
     benign = RandomAgent(env=env)
       
     agents = [interceptor, adversary, benign]
-    
+   
     
     for agent in agents:
         agent.setup_learn()
@@ -103,8 +103,9 @@ def objective(trial):
                 agents[prev].proceed(obs, reward, done, info)
         elif curr == 1 or curr == 2:
             if done:
-                term_obs = agents[1].env.get_obs()
-                agents[0].proceed(term_obs, reward, done, info)
+                # term_obs = agents[1].env.get_obs()
+                agents[0].proceed(obs, reward, False, info)
+                # agents[0].set_last(obs, False)
                 done, curr, nxt, n_steps = reset()
             else:
                 agents[0].proceed(obs, reward, done, info)
@@ -121,14 +122,14 @@ def objective(trial):
     adversary = RPPO.load("adversary_model", envv, "adversary")
     benign = RandomAgent(env=envv)
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, mean_acc= evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, mean_acc])
+    res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, start_eps, mean_acc])
     # np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
     print(res)
     
     # df = pd.DataFrame({'mean_reward_int': mean_rint, 'std_reward_int': std_rint, 'mean_reward_adv': mean_radv,
-    #                    'std_reward_adv': std_radv, 'mean_eps': mean_eps, 'mean_acc': mean_acc}, index=[0])
+    #                    'std_reward_adv': std_radv, 'mean_eps': mean_eps, 'start_eps': start_eps, 'mean_acc': mean_acc}, index=[0])
     # fd = pd.DataFrame(epsilons)
     # # file_path = os.path.join(logdir, 'bags_')
     # path1 = logdir + name + '.csv'
@@ -141,6 +142,7 @@ def objective(trial):
 def check_full(agents):
     for i in range(2):
         if agents[i].rollout_buffer.full:
+            # print(i, "agent training")
             agents[i].close_buffer()
             agents[i].train()
             agents[i].reset_buffer()

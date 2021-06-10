@@ -21,10 +21,11 @@ def objective_bags(trial):
     buffer = trial.suggest_categorical('buffer', [256,512,1024])
     batch = trial.suggest_categorical('batch', [32,64,128])
     # sde = trial.suggest_categorical('sde', [False, True])
-    lr = trial.suggest_float('lr',0.00001, 0.001, step=0.00001)
+    lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001,0.00005,0.00001])
     gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
-    ent_coef = trial.suggest_float('ent_coef', 0, 1e-3, step=1e-4)
-    reward = trial.suggest_categorical('reward', [1,2,3,4,5])
+    ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
+    scale = trial.suggest_categorical('scale', [10,15,20,25])
+    reward = trial.suggest_categorical('reward', [1,2,3,4])
     
     # Create environment
     env = gym.make("BagsSkip-v0", steps=1000, rewarder=reward, dataset=dataset)
@@ -57,9 +58,13 @@ def objective_bags(trial):
 
     # Evaluate the agent
     envv = gym.make("BagsSkip-v0", steps=1000, rewarder=1, dataset=dataset, train=False)#, nonadaptive=True)
-    mean_reward, std_reward, epsilons, _ = evaluate_policy(model, envv, n_eval_episodes=100)
+    mean_reward, std_reward, epsilons, mean_eps, start_eps, _, _, _ = evaluate_policy(model, envv, n_eval_episodes=100)
     
     # mean_epsilon = np.mean([x[-1] for x in epsilons])
-    median_epsilon = np.median([x[-1] for x in epsilons])
+    # median_epsilon = np.median([x[-1] for x in epsilons])
     
-    return median_epsilon
+    res = np.asarray([mean_reward, std_reward, mean_eps, start_eps])
+    # np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
+    print(res)
+    
+    return mean_eps

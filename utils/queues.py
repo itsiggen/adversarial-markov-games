@@ -8,18 +8,32 @@ def l2(a,b):
     #L2 distance
     return np.linalg.norm(a-b)
 
-similarityModel = load_model('models/SIMILARITYmodel.h5', compile=False)
-def getSimilarityEncoding(query):
-    # print(type(query))
-    # npt = query.numpy()
-    # tft = tf.convert_to_tensor(npt)
-    s =  similarityModel.predict(query, steps=1)
-    # z =  similarityModel.predict(tft, steps=1)
-    # print(l2(s, z))
-    return s
+# similarityModel = load_model('models/SIMILARITYmodel.h5', compile=False)
+# def getSimilarityEncoding(query):
+#     # print(type(query))
+#     # npt = query.numpy()
+#     # tft = tf.convert_to_tensor(npt)
+#     s = similarityModel.predict(query, steps=1)
+#     # z =  similarityModel.predict(tft, steps=1)
+#     # print(l2(s, z))
+#     return s
 
+
+class SimEnc():
+    def __init__(self, dataset):
+        if dataset == 'mnist':
+            self.similarityModel = load_model('models/MNISTencoder.h5', compile=False)
+        elif dataset == 'cifar':
+            self.similarityModel = load_model('models/CIFARencoder.pt', compile=False)
+            
+        
+    def getSimilarityEncoding(self, query):
+        return self.similarityModel.predict(query, steps=1)
+    
+    
 class Queues():
-    def __init__(self, nrQueues=2, sizeState=30, threshold=0.1):
+    def __init__(self, nrQueues=2, sizeState=30, threshold=0.2, dataset='mnist'):
+        self.simenc = SimEnc(dataset)
         self.queues = []        
         self.threshold = threshold
         self.sizeState = sizeState        
@@ -31,7 +45,7 @@ class Queues():
             
     # assign to queue based on minimum similarity encoding
     def addQuery(self, query, logits):
-        simEnc = getSimilarityEncoding(query)
+        simEnc = self.simenc.getSimilarityEncoding(query)
         # a = []
         # for i, queue in enumerate(self.queues):
         #     a.append(l2(queue.getLastEncoding(), simEnc))
@@ -46,7 +60,9 @@ class Queues():
             index = 1
         else:
             t = l2(self.queues[0].getLastEncoding(), simEnc)
-            index = 0 if t < self.threshold else 1
+            y = l2(self.queues[1].getLastEncoding(), simEnc)
+            # print(t,y)
+            index = 0 if t < self.threshold or y < self.threshold else 1
         self.queues[index].addQueryToQueue(query, logits, simEnc)
         self.adds += 1
         # if self.adds > 2:

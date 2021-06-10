@@ -119,7 +119,7 @@ class RPPO(PPO):
         new_obs, reward, done, info, agent, next_agent = self.env.step(clipped_actions)
         
         return new_obs, reward, done, info, agent, next_agent
-        
+            
     def proceed(self, new_obs, rewards, dones, infos):
         self.num_timesteps += self.env.num_envs
 

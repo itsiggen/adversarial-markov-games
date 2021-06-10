@@ -1,6 +1,5 @@
 import numpy as np
 from tensorflow.keras.models import load_model
-import timeit
 import matplotlib.pyplot as plt
 
 def l2(a,b):

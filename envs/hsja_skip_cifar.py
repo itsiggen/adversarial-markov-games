@@ -10,19 +10,18 @@ from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.buckets import l2
-from typing import Union, Callable, List
-from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
-from collections import deque
+from models.loader import load
+from torchvision import transforms
+from typing import List
 import matplotlib.pyplot as plt
 import math
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class HsjaSkip(gym.Env):
+class HsjaSkipCIFAR(gym.Env):
     def __init__(
         self,
-        steps: int = 1000,
+        steps: int = 5000,
         reps: int = 64,
         init_gradient_eval_steps: int = 100,
         max_gradient_eval_steps: int = 10000,
@@ -32,13 +31,12 @@ class HsjaSkip(gym.Env):
         epsilon = 0.01,
         train = True,
         rewarder = 1,
-        scale = 400,
         dataset = None,
         seed = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
-        super(HsjaSkip, self).__init__()  
+        super(HsjaSkipCIFAR, self).__init__()  
 
         # Boundary Attack inits
         self.steps = steps
@@ -49,7 +47,6 @@ class HsjaSkip(gym.Env):
         self.epsilon = epsilon
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
-        self.scale = scale
         self.tensorboard = tensorboard
         random.seed(seed)
 
@@ -58,20 +55,14 @@ class HsjaSkip(gym.Env):
         # Observation space
         self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
 
-        # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
-        self.dataset = dataset
-        if defended:
-            self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
-            self.mode.eval()
-        else:
-            self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-            self.mode.eval()
-
-        self.model = PyTorchModel(self.mode, bounds=(0, 1))
+        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
+        self.dataset, model = load('CIFAR', defended)
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
+        self.model = PyTorchModel(model, bounds=(0, 1))
         self.indices = [0,7999] if train else [8000,9999]
-        self.dim = 28
+        self.dim = 32
+        self.channels = 3
         self.resets = 0
     
         self.done = False
@@ -86,18 +77,16 @@ class HsjaSkip(gym.Env):
             self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
+        if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
         self.dist = self.gap
-        self.goal = self.gap * self.epsilon
+        # self.goal = self.gap * self.epsilon
         # Distance between successive steps
         self.diff = np.float32(0.0)
         # Moving average of the closing distance
         self.dist_moving = np.float32(1.0)
-        # Initial mask
-        self.x_mask = np.ones(self.wanted_point.shape, dtype=np.float32)
         # Moving average of the gain
         self.gain_moving = 0.1
         # Target epsilon as the ratio of initial l2 distance
@@ -112,11 +101,12 @@ class HsjaSkip(gym.Env):
             raise ValueError("no starting_point provided")
         else:
             self.best_advs = self.starting_point
-        
-        is_adv = self.is_adversarial(self.best_advs.unsqueeze(1))
+
+        cand = self.normalize(self.best_advs)
+        is_adv  = self.is_adversarial(cand.unsqueeze(0))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
-          
+            
         self.best_advs, self.extra_queries = self.binary_step(ep.astensor(self.best_advs), 1)    
         # pos = self.best_advs.squeeze(0).numpy()
         # pos = pos[::4,::4].flatten().tolist()
@@ -134,25 +124,24 @@ class HsjaSkip(gym.Env):
         return observation
         
     def scale_binary(self, v):
-        # Binary search parameter from [-2,2] to [0.01, 0.41]
+        # Binary search parameter from [-2,2] to [0.01, 0.51]
         return (v + 2) / 10 + 0.01
     
     def scale_delta(self, v):
         # Delta from [-2,2] to [0.0001,0.0101]
-        return ((v + 2) / self.scale) + 0.0001
+        return ((v + 2) / 400) + 0.0001
     
     def scale_step(self, v):
-        # Jump step search from [-2,2] to [0.1,0.9]
-        return (v + 2) / 5 + 0.1
+        # Jump step search from [-2,2] to [0.1,1]
+        return (v + 2) / 4 + 0.1
     
     # try different num of grad
     def scale_grad(self, v):
         # Gradient estimation steps from [-2,2] to [50,200]
         # return (((v + 2) / 4) * 250 + 50).astype(int)
-        return ((v + 2) / 8) + 0.25 # to [0.75,1.25]
+        return ((v - 1) / 4) + 1 # to [0.25,1.25]
     
     def step(self, action):
-        action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         self.reps += 1
         self.queries_left = self.steps - self.iter 
                     
@@ -203,10 +192,11 @@ class HsjaSkip(gym.Env):
          
         # print(self.dist)
         # TODO: potentially reward shorter episodes       
-        self.converged = self.dist < self.goal
+        # self.converged = self.dist < self.goal
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True
+            print(self.dist)
         
         # if self.done:
         #     print(self.resets)
@@ -221,8 +211,7 @@ class HsjaSkip(gym.Env):
                 "epsilon" : self.dist,
                 "actions" : action,
                 "correct" : True,
-                "iters" : self.iter,
-                "gap" : self.gap}
+                "iters" : self.iter}
         return obs, r, self.done, info
     
     def observation(self):
@@ -261,7 +250,7 @@ class HsjaSkip(gym.Env):
         # if self.nonadaptive:
         steps = 0
         # print(len(best_advs))
-        highs = ep.ones(best_advs, len(best_advs))
+        highs = ep.ones(best_advs, 1)
         lows = ep.zeros_like(highs)
         threshold = 1 / self.dim ** 3
         best_candidate = best_advs
@@ -269,7 +258,8 @@ class HsjaSkip(gym.Env):
         while ep.any(highs - lows > threshold):
             mids = (lows + highs) / 2
             candidate = self.project(self.wanted_point, best_advs, mids)
-            is_adv = self.is_adversarial(candidate.raw.unsqueeze(1))
+            # cand = self.normalize(candidate.raw)
+            is_adv = self.is_adversarial(self.normalize(candidate.raw).unsqueeze(0))
             if is_adv:
                 highs = mids
                 best_candidate = candidate
@@ -281,27 +271,10 @@ class HsjaSkip(gym.Env):
             #     break
         # print('bin steps:', steps)
         return best_candidate, steps
-        # else:
-        #     steps = 0
-        #     while True:
-        #         candidate = self.project(self.wanted_point, best_advs, epsilon)
-        #         is_adv = self.is_adversarial(ep.astensor(candidate).raw.unsqueeze(1))
-        #         steps += 1
-        #         self.iter +=1
-        #         if is_adv:
-        #             best_candidate = candidate
-        #             break
-        #         elif steps >= 5:
-        #             best_candidate = best_advs
-        #         else:
-        #             epsilon *= 1.5
-        #             # print(epsilon)
-        #     print('bin steps:', steps)
-        #     return best_candidate, steps
         
     def approximate_gradients(self, x_advs, steps, delta):
         noise_shape = tuple([steps] + list(x_advs.shape))
-        rv = ep.normal(x_advs, noise_shape)
+        rv = ep.normal(x_advs, noise_shape)           
         rv /= atleast_kd(ep.norms.l2(flatten(rv, keep=1), -1), rv.ndim) + 1e-12
         # scaled_rv = atleast_kd(ep.expand_dims(delta, 0), rv.ndim) * rv
         scaled_rv = delta * rv
@@ -313,7 +286,9 @@ class HsjaSkip(gym.Env):
 
         multipliers_list: List[ep.Tensor] = []
         for step in range(steps):
-            decision = self.is_adversarial(perturbed[step].raw.unsqueeze(1))
+            # cand = self.normalize(perturbed[step])
+            decision = self.is_adversarial(self.normalize(perturbed[step].raw).unsqueeze(0))
+            # decision = self.is_adversarial(ep.astensor(perturbed[step]).raw.unsqueeze(1))
             self.iter +=1
             multipliers_list.append(ep.ones(x_advs,1) if decision else -ep.ones(x_advs,1))
             #     ep.where(
@@ -335,16 +310,16 @@ class HsjaSkip(gym.Env):
 
         grad /= ep.norms.l2(atleast_kd(flatten(grad), grad.ndim)) + 1e-12
         # print('grad steps:', steps)
+        # print(type(grad.raw))
         return grad, ep.mean(multipliers, axis=0).raw.squeeze(0).numpy()
     
     def jump_step(self, grad, step, x_advs):
         steps = 0
         epsilon = self.dist * step
-        # print(grad)
         while True:
-            # candidate = ep.clip(x_advs + atleast_kd(epsilon, x_advs.ndim) * grad, 0, 1)
             candidate = ep.clip(x_advs + epsilon * grad, 0, 1)
-            success = self.is_adversarial(candidate.raw.unsqueeze(1))
+            # candidate = self.normalize(ep.clip(x_advs + epsilon * grad, 0, 1))
+            success = self.is_adversarial(self.normalize(candidate.raw).unsqueeze(0))
             steps += 1
             self.iter += 1
             if success:
@@ -367,12 +342,8 @@ class HsjaSkip(gym.Env):
 
     # =============================================================
 
-    # def reward1(self):
-    #     reward = self.gain / self.gap
-    #     return reward
-    
     def reward1(self):
-        reward = self.gain*10
+        reward = self.gain / self.gap
         return reward
 
     # def reward2(self):
@@ -382,16 +353,16 @@ class HsjaSkip(gym.Env):
     #     return reward
     
     def reward2(self):
-        reward = 10/self.action_grad + 0.1/self.jump_steps + self.reward1()
+        reward = 1/self.action_grad + 1/self.jump_steps + self.reward1()
         return reward
 
     def reward3(self):
         fraction = self.dist / self.gap
         reward = (1 - fraction ** 2) ** 0.5
-        return reward*10
+        return reward
 
     def reward4(self):
-        reward = 10/self.action_grad + self.reward1()
+        reward = 1/self.jump_steps + self.reward1()
         return reward
     
     # def reward5(self):
@@ -401,7 +372,7 @@ class HsjaSkip(gym.Env):
     #     return reward
     
     def reward5(self):
-        reward = -self.action_grad/200 + self.reward1()
+        reward = -self.action_grad/1000 + self.reward1()
         return reward
 
     # def reward5(self):
@@ -434,12 +405,12 @@ class HsjaSkip(gym.Env):
         originImgNr = random.randint(*self.indices)
         
         # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.dataset[originImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[originImgNr][1]:
+        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
             originImgNr = random.randint(*self.indices)
         
         # Make sure starting and original images do not belong to the same class, and starting is correctly classified
         while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.dataset[startImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[startImgNr][1]:
+            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
             startImgNr = random.randint(*self.indices)
         
         startImg = self.dataset[startImgNr][0].to(device)

@@ -63,11 +63,11 @@ class BoundarySkip(gym.Env):
         self.dataset = dataset
         if defended:
             self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
+            self.mode.load_state_dict(torch.load('../models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
             self.mode.eval()
         else:
             self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
+            self.mode.load_state_dict(torch.load('../models/mnist_cnn.pt'))
             self.mode.eval()
 
         self.model = PyTorchModel(self.mode, bounds=(0, 1))
@@ -160,8 +160,9 @@ class BoundarySkip(gym.Env):
         # if self.iter < 30:
         #     print(action)
         
-        self.converged = self.dist < self.epsilon
-        if self.converged or self.iter > self.steps:
+        # self.converged = self.dist < self.epsilon
+        # if self.converged or self.iter > self.steps:
+        if self.iter > self.steps:
             self.tb.close()
             self.done = True
             
@@ -207,7 +208,8 @@ class BoundarySkip(gym.Env):
                     "epsilon" : self.dist,
                     "actions" : action,
                     "correct" : True,
-                    "success" : self.success}
+                    "iters" : self.iter,
+                    "gap" : self.gap}
             return obs, r, self.done, info
         else:
             self.is_adv = self.is_adversarial(self.candidates.raw.unsqueeze(1))
@@ -233,16 +235,17 @@ class BoundarySkip(gym.Env):
             self.improve_avg = self.improve_avg * 0.8 + (self.improve_last * 0.2) / self.steps
             self.reward_mult = self.improve_last
             self.improve_last = 0
+            # print(self.dist, self.iter)
         else:
             self.reward_mult = 1
             self.improve_last += 1
             self.gain = 0
             
-        is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
-        # print(is_within_eps)
-        if is_best_adv.numpy()[0] and is_within_eps:
-            self.done = True
-            self.success = True
+        # is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
+        # # print(is_within_eps)
+        # if is_best_adv.numpy()[0] and is_within_eps:
+        #     self.done = True
+        #     self.success = True
             # print('success')
         
         self.unnormalized_source_directions = self.originals - self.best_advs

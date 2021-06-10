@@ -9,8 +9,8 @@ from tests.mnist_hsja_opt import objective_hsja
 
 study = optuna.create_study()  # Create a new study.
 # study.optimize(objective_bnd, n_trials=100)  # Invoke optimization of the objective function.
-study.optimize(objective_bags, n_trials=100)  # Invoke optimization of the objective function.
-# study.optimize(objective_hsja, n_trials=100) 
+# study.optimize(objective_bags, n_trials=100)  # Invoke optimization of the objective function.
+study.optimize(objective_hsja, n_trials=100) 
 
 
 # if __name__ == '__mainatt__':
@@ -18,4 +18,3 @@ study.optimize(objective_bags, n_trials=100)  # Invoke optimization of the objec
 #     parser.add_argument('--max-timesteps', default=int(5e4), type=int, help="Maximum number of timesteps")
 #     args = parser.parse_args()
 #     mainatt(args)
-    
