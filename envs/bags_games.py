@@ -18,7 +18,8 @@ from collections import deque
 import matplotlib.pyplot as plt
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 np.seterr(invalid='raise')
 
 class BagsGames(gym.Env):
@@ -270,7 +271,7 @@ class BagsGames(gym.Env):
             # obs, info = {}
             # Set state to interceptor
             self.curr = 0
-            return self.obs, None, self.done, {}
+            return self.obs, 0, self.done, {}
                  
     def step_adv(self, action):
         self.iter += 1
@@ -334,7 +335,8 @@ class BagsGames(gym.Env):
         # Intercept the last query, adversarial or benign
         probs = torch.nn.functional.softmax(logits, dim=1)
         # print(type(query))
-        index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
+        # index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
+        index = self.queues.addQuery(query, probs)
         # print(self.next, index+1)
         obs = self.queues.getState(index)
         # print(self.benign)
@@ -486,7 +488,8 @@ class BagsGames(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
+        # self.tb.scalar("reward", torch.tensor([reward]), self.iter)
+        # print("rew", reward_nr, reward)
         return reward
     
     def roll_next(self):

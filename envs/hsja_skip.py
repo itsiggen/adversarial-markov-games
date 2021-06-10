@@ -203,7 +203,7 @@ class HsjaSkip(gym.Env):
          
         # print(self.dist)
         # TODO: potentially reward shorter episodes       
-        self.converged = self.dist < self.goal
+        # self.converged = self.dist < self.goal
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True

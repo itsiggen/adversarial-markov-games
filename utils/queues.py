@@ -25,11 +25,10 @@ class SimEnc():
             self.similarityModel = load_model('models/MNISTencoder.h5', compile=False)
         elif dataset == 'cifar':
             self.similarityModel = load_model('models/CIFARencoder.pt', compile=False)
-            
         
     def getSimilarityEncoding(self, query):
+        query = tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(query),0),3)
         return self.similarityModel.predict(query, steps=1)
-    
     
 class Queues():
     def __init__(self, nrQueues=2, sizeState=30, threshold=0.2, dataset='mnist'):
@@ -45,6 +44,8 @@ class Queues():
             
     # assign to queue based on minimum similarity encoding
     def addQuery(self, query, logits):
+        # torch.tensor(query).unsqueeze(0).unsqueeze(3)
+        # print(type(query))
         simEnc = self.simenc.getSimilarityEncoding(query)
         # a = []
         # for i, queue in enumerate(self.queues):

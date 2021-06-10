@@ -95,7 +95,7 @@ def evaluate_rpolicy(
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
-    episode_rewards, lengths, epsilons, acc = [], [], [], []
+    episode_rewards, lengths, epsilons, start, acc = [], [], [], [], []
     
     agents = [interceptor, adversary, benign]
 
@@ -115,7 +115,7 @@ def evaluate_rpolicy(
             obs, reward, done, _info, curr, nxt = env.step(action)
             # print(curr, nxt)
             agent_rewards[prev] += reward
-            print(agent_rewards)
+            # print(agent_rewards)
             # if curr == 0:
             #     elif curr = 1:
             #         else:
@@ -124,10 +124,12 @@ def evaluate_rpolicy(
                 epsilon.append(_info['epsilon'])
                 correct = _info['correct']
             if done:
+                gap = _info['gap']
                 curr, nxt = 1, 0
         episode_rewards.append(agent_rewards)
         lengths.append(agent_steps)
         epsilons.append(epsilon)
+        start.append(gap)
         acc.append(correct)
     mean_reward_int = np.mean([i[0] for i in episode_rewards]) #WRONG -> [i[0] for i in episode_rewards]
     std_reward_int = np.std([i[0] for i in episode_rewards])
@@ -135,9 +137,9 @@ def evaluate_rpolicy(
     std_reward_adv = np.std([i[1] for i in episode_rewards])
     mean_acc = np.mean(acc)
     mean_eps = np.mean([i[-1] for i in epsilons])
-    start_eps = np.mean([i[0] for i in epsilons])
+    start_eps = np.mean(gap)
 
-    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, start_eps, mean_acc
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, lengths, mean_eps, start_eps, mean_acc
 
 def evaluate_rdpolicy(
     interceptor,
@@ -157,7 +159,7 @@ def evaluate_rdpolicy(
     if isinstance(env, VecEnv):
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
-    episode_rewards, lengths, epsilons, acc = [], [], [], []
+    episode_rewards, lengths, epsilons, start, acc = [], [], [], [], []
     
     agents = [interceptor, adversary, benign]
 
@@ -191,10 +193,12 @@ def evaluate_rdpolicy(
             # print(env.iter, done)
             if done:
                 # print(done)
+                gap = _info['gap']
                 curr, nxt = 1, 0
         episode_rewards.append(agent_rewards)
         lengths.append(agent_steps)
         epsilons.append(epsilon)
+        start.append(gap)
         acc.append(correct)
         # print(i)
     mean_reward_int = np.mean([i[0] for i in episode_rewards]) #WRONG -> [i[0] for i in episode_rewards]
@@ -203,6 +207,6 @@ def evaluate_rdpolicy(
     std_reward_adv = np.std([i[1] for i in episode_rewards])
     mean_acc = np.mean(acc)
     mean_eps = np.mean([i[-1] for i in epsilons])
-    start_eps = np.mean([i[0] for i in epsilons])
+    start_eps = np.mean(gap)
 
-    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, mean_eps, start_eps, mean_acc
+    return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, lengths, mean_eps, start_eps, mean_acc

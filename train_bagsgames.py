@@ -112,19 +112,19 @@ def objective(trial):
 
     # Save the trained agents
     print("Saving models...")
-    interceptor.save("interceptor_model")
-    adversary.save("adversary_model")
+    interceptor.save("mods/games/bagsgamesint_" + str(trial.number) + "_model.pt")
+    adversary.save("mods/games/bagsgamesadv_" + str(trial.number) + "_model.pt")
     
     # Make evaluation env
     envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rewarder=reward, intercept = inter, seed=seed)
     # Load the trained agents
-    interceptor = RPPO.load("interceptor_model", envv, "interceptor")
-    adversary = RPPO.load("adversary_model", envv, "adversary")
+    interceptor = RPPO.load("mods/games/bagsgamesint_" + str(trial.number) + "_model.pt", envv, "interceptor")
+    adversary = RPPO.load("mods/games/bagsgamesadv_" + str(trial.number) + "_model.pt", envv, "adversary")
     benign = RandomAgent(env=envv)
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, legnths, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, start_eps, mean_acc])
+    res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, mean_eps, start_eps, mean_acc])
     # np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
     print(res)
     

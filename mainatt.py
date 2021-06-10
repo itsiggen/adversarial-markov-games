@@ -47,7 +47,7 @@ dataset = datasets.MNIST('./data', train=False, transform=transform, download=Tr
 model = PPO.load('mods/hsjaskip_best.pt')
 
 # Evaluate the agent
-envv = gym.make("HsjaSkip-v0", steps=5000, train=False, dataset=dataset)#, nonadaptive=True)
+envv = gym.make("HsjaSkip-v0", steps=5000, train=False, dataset=dataset, nonadaptive=True)
 mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
 
 # mean_epsilon = np.mean([x[-1] for x in epsilons])

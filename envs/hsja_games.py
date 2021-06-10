@@ -52,6 +52,7 @@ class HsjaGames(gym.Env):
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
         self.ratio_benign = ratio_benign
         self.rewarder = rewarder
+        self.intercept = intercept
         self.tensorboard = tensorboard
         random.seed(seed)
 
@@ -82,19 +83,20 @@ class HsjaGames(gym.Env):
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
-        self.intercept = intercept
     
     def scale_delta(self, v):
-        # Delta from [-2,2] to [0.0001,0.1001]
-        return ((v + 2) / 40) + 0.0001
+        # Delta from [-2,2] to [0.0001,0.0101]
+        return ((v + 2) / 400) + 0.0001
     
     def scale_step(self, v):
-        # Jump step search from [-2,2] to [0.1,1]
-        return (v + 2) / 4 + 0.1
+        # Jump step search from [-2,2] to [0.1,0.9]
+        return (v + 2) / 5 + 0.1
     
+    # try different num of grad
     def scale_grad(self, v):
-        # Gradient estimation steps from [-2,2] to [100,400]
-        return (((v + 2) / 4) * 300 + 100).astype(int)
+        # Gradient estimation steps from [-2,2] to [50,200]
+        # return (((v + 2) / 4) * 250 + 50).astype(int)
+        return ((v + 2) / 8) + 0.25 # to [0.75,1.25]
     
     def scale_intercept(self, v):
         return ((v + 2) / 4) * self.intercept
@@ -286,8 +288,11 @@ class HsjaGames(gym.Env):
                     
         # Scale actions to proper values
         self.action_delta = self.scale_delta(action[0])*self.dist
+        if self.reps == 1: self.action_delta = 0.1*self.dist
         self.action_step = self.scale_step(action[1])
         self.action_grad = self.scale_grad(action[2])
+        num_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
+        self.action_grad = (num_grad * self.action_grad).astype(int)
         # self.action_binary = self.scale_binary(action[3])
         self.action_binary = 1
         # print(self.action_grad)
@@ -295,8 +300,9 @@ class HsjaGames(gym.Env):
         # Setting actions according to vanilla HSJA
         if self.adaptive == 0 or self.adaptive == 2:
             self.action_delta = self.select_delta(self.dist)
-            self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps + 1), self.max_grad_evals]))
-            self.action_step = 1/math.sqrt(self.reps + 1)
+            # self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
+            self.action_grad = num_grad
+            self.action_step = 1/math.sqrt(self.reps)
         
         # print(self.action_delta)
         # To force fixed number of queries, reduce gradient estimation steps if necessary
@@ -335,8 +341,9 @@ class HsjaGames(gym.Env):
     def observation_int(self, logits, query):
         # Intercept the last query, adversarial or benign
         probs = torch.nn.functional.softmax(logits, dim=1)
-        # print(type(query))
-        index = self.queues.addQuery(query.unsqueeze(3), probs)
+        print(type(query))
+        # index = self.queues.addQuery(query.unsqueeze(3), probs)
+        index = self.queues.addQuery(query, probs)
         # print(self.next, index+1)
         obs = self.queues.getState(index)
         obs = np.nan_to_num(obs, nan=0.0, posinf=1, neginf=0)
@@ -626,5 +633,6 @@ class HsjaGames(gym.Env):
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
                 "epsilon" : self.dist,
-                "correct" : correct}
+                "correct" : correct,
+                "gap" : self.gap}
         return info
