@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import os, sys
 import optuna
+import random
 from stable_baselines3 import PPO
 # from envs.boundary_skip import BoundarySkip
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -116,8 +117,9 @@ def train():
     # model.save('../mods/bagsskipcifar_0_model.pt')
     
     # Evaluate the agent
-    envv = gym.make("BagsSkipCIFAR-v0", steps=10000, rewarder=reward, train=False)#, nonadaptive=True)
+    envv = gym.make("BagsSkipCIFAR-v0", steps=1000, rewarder=reward, train=False)#, nonadaptive=True)
     model = PPO.load('../mods/bagsskipcifar_best.pt')
+    # random.seed(7)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
     
     # mean_eps = np.mean([x[-1] for x in epsilons])

@@ -87,7 +87,7 @@ class BagsSkip(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
@@ -205,13 +205,20 @@ class BagsSkip(gym.Env):
             # self.gain = l2(self.candidate, self.best_advs)
             self.gain = self.source_norm - self.distance
             self.best_advs = self.candidate
-            self.dist = l2(self.best_advs, self.wanted_point)
+            # self.dist = l2(self.best_advs, self.wanted_point)
+            self.dist = self.distance
             self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
             self.improve_avg = self.improve_avg * 0.8 + (1/(self.improve_last +1))*0.2
             self.reward_mult = self.improve_last
             self.improve_last = 0
             self.na_batch = 1
             # print(self.dist, self.iter)
+            
+            self.unnormalized_source_direction = self.wanted_point - self.best_advs
+            # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+            self.source_norm = self.distance
+            self.source_direction = self.unnormalized_source_direction / self.source_norm
+            
         else:
             self.reward_mult = 1
             self.improve_last += 1
@@ -228,9 +235,9 @@ class BagsSkip(gym.Env):
         #     self.success = True
         #     # print('success')
         
-        self.unnormalized_source_direction = self.wanted_point - self.best_advs
-        self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
-        self.source_direction = self.unnormalized_source_direction / self.source_norm
+        # self.unnormalized_source_direction = self.wanted_point - self.best_advs
+        # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+        # self.source_direction = self.unnormalized_source_direction / self.source_norm
         # update tensorboard
         # self.update_tb(is_best_adv, cond
 

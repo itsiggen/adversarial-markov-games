@@ -37,9 +37,7 @@ class BagsGames(gym.Env):
         dataset = None,
         intercept = 1,
         device = 'cpu',
-        seed = 2,
         tensorboard = False,
-        update_stats_every_k: int = 10
         ):
         super(BagsGames, self).__init__()  
 
@@ -50,9 +48,9 @@ class BagsGames(gym.Env):
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
         self.ratio_benign = ratio_benign
         self.rewarder = rewarder
+        self.intercept = intercept
         self.scale = scale
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -81,7 +79,6 @@ class BagsGames(gym.Env):
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
-        self.intercept = intercept
     
         self.done = False
 
@@ -107,7 +104,7 @@ class BagsGames(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
@@ -224,12 +221,20 @@ class BagsGames(gym.Env):
                 # self.gain = l2(self.candidate, self.best_advs)
                 self.gain = self.source_norm - self.distance
                 self.best_advs = self.candidate
-                self.dist = l2(self.best_advs, self.wanted_point)
+                # self.dist = l2(self.best_advs, self.wanted_point)
+                self.dist = self.distance
                 self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
                 self.improve_avg = self.improve_avg * 0.8 + (1/(self.improve_last +1))*0.2
                 self.reward_mult = self.improve_last
                 self.improve_last = 0
                 self.na_batch = 1
+                # print(self.dist, self.iter)
+                
+                self.unnormalized_source_direction = self.wanted_point - self.best_advs
+                # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+                self.source_norm = self.distance
+                self.source_direction = self.unnormalized_source_direction / self.source_norm
+                
             else:
                 self.reward_mult = 1
                 self.improve_last += 1
@@ -239,9 +244,16 @@ class BagsGames(gym.Env):
                     self.na_batch = 1
                 self.gain = np.float32(0)
             
-            self.unnormalized_source_direction = self.wanted_point - self.best_advs
-            self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
-            self.source_direction = self.unnormalized_source_direction / self.source_norm
+            # # TODO: potentially reward shorter episodes
+            # is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
+            # if is_best_adv and is_within_eps:
+            #     self.done = True
+            #     self.success = True
+            #     # print('success')
+            
+            # self.unnormalized_source_direction = self.wanted_point - self.best_advs
+            # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+            # self.source_direction = self.unnormalized_source_direction / self.source_norm
             # update tensorboard
             # self.update_tb(is_best_adv, cond
     
@@ -311,10 +323,10 @@ class BagsGames(gym.Env):
         self.is_adv = self.is_adv.raw.numpy()[0]
         
         # Normal attack flow is interrupted here, generate obs for interceptor
-        # wher the final decision on is_adv is made
+        # where the final decision on is_adv is made
             
-        obs, index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index), self.candidate, self.rewarder)
+        obs, self.index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
+        r = self.reward_int(self.queues.getStepSizeQueue(self.index), self.candidate, self.rewarder)
         info = self.get_info()
         # Set state to adversary
         self.curr = 1
@@ -324,8 +336,8 @@ class BagsGames(gym.Env):
         self.queries += 1
         candidate, self.label = self.get_benign(action)
         self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1))
-        obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index), candidate, self.rewarder)
+        obs, self.index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
+        r = self.reward_int(self.queues.getStepSizeQueue(self.index), candidate, self.rewarder)
         info = self.get_info()
         # Set state to benign
         self.curr = 2
@@ -494,7 +506,7 @@ class BagsGames(gym.Env):
     
     def roll_next(self):
         # decide next query; benign with P = ratio_benign
-        if random.random() < self.ratio_benign and self.iter > 12:
+        if np.random.random() < self.ratio_benign and self.iter > 5:
             self.next = 2
         else:
             self.next = 1
@@ -507,9 +519,12 @@ class BagsGames(gym.Env):
         # If non-adaptive, return actual model decision
         if self.adaptive == 0 or self.adaptive == 1:
             return True
-        # if self.curr == 1 and step > 1:
-        #     print(step, action, self.iter)
+        # if self.curr == 1 and step > self.intercept:
+            # print(step, action, self.index, self.iter+self.queries, self.resets)
+        # if self.curr == 1 and self.iter > 1:
+        #     print('0', self.index)
         # if self.curr == 2:
+            # print('1', self.index)
         #     print(step, action, "BENIGN")
         return action[0] < step
 
@@ -540,7 +555,7 @@ class BagsGames(gym.Env):
         return startImg.squeeze(0).numpy(), startLabel, originImg.squeeze(0).numpy(), originLabel
     
     def get_benign(self, action):
-        nr = random.randint(*self.indices)
+        nr = np.random.randint(*self.indices)
         
         mu, sigma = 0, action # mean and standard deviation
         s = np.random.normal(mu, sigma, 28*28)

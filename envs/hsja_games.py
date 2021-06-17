@@ -37,7 +37,6 @@ class HsjaGames(gym.Env):
         dataset = None,
         intercept = 1,
         device = 'cpu',
-        seed = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
@@ -54,7 +53,6 @@ class HsjaGames(gym.Env):
         self.rewarder = rewarder
         self.intercept = intercept
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -240,7 +238,7 @@ class HsjaGames(gym.Env):
         # decide next query; benign with P = ratio_benign
         if self.repdone:
             nxt = 1
-        elif random.random() < self.ratio_benign and self.iter > 5:
+        elif np.random.random() < self.ratio_benign and self.iter > 5:
             nxt = 2
         else:
             nxt = 0
@@ -614,7 +612,7 @@ class HsjaGames(gym.Env):
         return action < step
    
     def get_benign(self, action):
-        nr = random.randint(*self.indices)
+        nr = np.random.randint(*self.indices)
         
         mu, sigma = 0, action # mean and standard deviation
         s = np.random.normal(mu, sigma, 28*28)

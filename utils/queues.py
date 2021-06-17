@@ -31,7 +31,7 @@ class SimEnc():
         return self.similarityModel.predict(query, steps=1)
     
 class Queues():
-    def __init__(self, nrQueues=2, sizeState=30, threshold=0.2, dataset='mnist'):
+    def __init__(self, nrQueues=2, sizeState=30, threshold=0.1, dataset='mnist'):
         self.simenc = SimEnc(dataset)
         self.queues = []        
         self.threshold = threshold
@@ -49,7 +49,7 @@ class Queues():
         simEnc = self.simenc.getSimilarityEncoding(query)
         # a = []
         # for i, queue in enumerate(self.queues):
-        #     a.append(l2(queue.getLastEncoding(), simEnc))
+        #     a.append(l2(queue.getEncoding(), simEnc))
         # # mb online update of threshold
         # if a[np.argmin(a)] < self.threshold:
         #     index = np.argmin(a)
@@ -59,9 +59,11 @@ class Queues():
             index = 0
         elif self.adds == 1:
             index = 1
+        elif self.adds == 2:
+            index = 0
         else:
-            t = l2(self.queues[0].getLastEncoding(), simEnc)
-            y = l2(self.queues[1].getLastEncoding(), simEnc)
+            t = l2(self.queues[0].getEncoding(-1), simEnc)
+            y = l2(self.queues[0].getEncoding(-2), simEnc)
             # print(t,y)
             index = 0 if t < self.threshold or y < self.threshold else 1
         self.queues[index].addQueryToQueue(query, logits, simEnc)
@@ -100,6 +102,7 @@ class Queue():
         self.logits = []
         self.starts = []
         self.origins = []
+        self.encodings.append(0)
 
     def addQueryToQueue(self, query, logit, similaritySpaceEncoding):
         # self.lastBenignLabel = realLabel
@@ -144,9 +147,9 @@ class Queue():
             self.origin = rank[-1]
         return self.origin
         
-    def getLastEncoding(self):
-        if len(self.encodings) == 0:
-            return 0
+    def getEncoding(self, n):
+        # if len(self.encodings) == 0:
+        #     return 0
         return self.encodings[-1]
     
     def getLastQuery(self):

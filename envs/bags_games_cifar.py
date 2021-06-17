@@ -18,7 +18,8 @@ from collections import deque
 import matplotlib.pyplot as plt
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 np.seterr(invalid='raise')
 
 class BagsGamesCIFAR(gym.Env):
@@ -32,8 +33,10 @@ class BagsGamesCIFAR(gym.Env):
         ratio_benign = 0.5,
         train = True,
         rewarder = 1,
+        scale = 5,
         dataset = None,
         intercept = 1,
+        device = 'cpu',
         tensorboard = False,
         ):
         super(BagsGamesCIFAR, self).__init__()  
@@ -43,8 +46,9 @@ class BagsGamesCIFAR(gym.Env):
         self.spherical_step = spherical_step
         self.source_step = source_step
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
-        self.ratio_benign = ratio_benign
         self.rewarder = rewarder
+        self.intercept = intercept
+        self.scale = scale
         self.tensorboard = tensorboard
 
         # Observation space
@@ -114,7 +118,7 @@ class BagsGamesCIFAR(gym.Env):
         self.step_moving = 0.1
         self.gain_moving = 0.1
         # Initialize query queues
-        self.queues = Queues(nrQueues=2)
+        self.queues = Queues(nrQueues=2, dataset='cifar')
         # Target epsilon
         self.epsilon = 1
         self.correct = []

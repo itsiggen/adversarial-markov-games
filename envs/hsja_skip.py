@@ -9,7 +9,8 @@ from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.buckets import l2
+from utils.queues import l2
+import utils.perlin as pn
 from typing import Union, Callable, List
 from models.trainMNISTtorch import Net
 from models.trainAdvMNISTtorch import LeNet5
@@ -33,8 +34,8 @@ class HsjaSkip(gym.Env):
         train = True,
         rewarder = 1,
         scale = 400,
+        perlin = 0,
         dataset = None,
-        seed = 2,
         tensorboard = False,
         update_stats_every_k: int = 10
         ):
@@ -50,8 +51,8 @@ class HsjaSkip(gym.Env):
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
         self.scale = scale
+        self.perlin = perlin
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(3,), dtype=np.float32)
@@ -137,6 +138,10 @@ class HsjaSkip(gym.Env):
         # Binary search parameter from [-2,2] to [0.01, 0.41]
         return (v + 2) / 10 + 0.01
     
+    def scale_perlin(self, v):
+        act = ((v + 2) / 4) * (self.dim - 2) + 1
+        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
+    
     def scale_delta(self, v):
         # Delta from [-2,2] to [0.0001,0.0101]
         return ((v + 2) / self.scale) + 0.0001
@@ -149,7 +154,7 @@ class HsjaSkip(gym.Env):
     def scale_grad(self, v):
         # Gradient estimation steps from [-2,2] to [50,200]
         # return (((v + 2) / 4) * 250 + 50).astype(int)
-        return ((v + 2) / 8) + 0.25 # to [0.75,1.25]
+        return ((v + 2) / 8) + 0.75 # to [0.75,1.25]
     
     def step(self, action):
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
@@ -164,6 +169,7 @@ class HsjaSkip(gym.Env):
         num_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
         self.action_grad = (num_grad * self.action_grad).astype(int)
         # self.action_binary = self.scale_binary(action[3])
+        self.action_perlin = self.scale_perlin(action[3])
         self.action_binary = 1
         
         # Setting actions according to vanilla HSJA
@@ -172,12 +178,15 @@ class HsjaSkip(gym.Env):
             # self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
             self.action_grad = num_grad
             self.action_step = 1/math.sqrt(self.reps)
+            self.perlin = 0 
         
         # print(self.action_delta)
         # To force fixed number of queries, reduce gradient estimation steps if necessary
         self.action_grad = min(self.action_grad, max(self.queries_left-16, 16))
         # Gradient Estimation
-        grad, self.mean_adv = self.approximate_gradients(self.best_advs, self.action_grad, self.action_delta)
+
+        grad, self.mean_adv = self.approximate_gradients(self.best_advs, self.action_grad, self.action_delta, self.action_perlin)
+            
         # Jump Step
         # !check if gradient is correct
         self.candidate, self.jump_steps = self.jump_step(grad, self.action_step, self.best_advs)
@@ -207,6 +216,7 @@ class HsjaSkip(gym.Env):
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True
+            print(self.dist)
         
         # if self.done:
         #     print(self.resets)
@@ -299,9 +309,55 @@ class HsjaSkip(gym.Env):
         #     print('bin steps:', steps)
         #     return best_candidate, steps
         
-    def approximate_gradients(self, x_advs, steps, delta):
-        noise_shape = tuple([steps] + list(x_advs.shape))
-        rv = ep.normal(x_advs, noise_shape)
+    def approximate_gradients(self, x_advs, steps, delta, freq):
+        if self.perlin:
+            rv = pn.create_perlin_noise(x_advs.shape[-1], color=False, batch_size=steps, normalize=False, freq=freq)
+            rv = ep.astensor(torch.tensor(rv).unsqueeze(1))
+        else:
+            noise_shape = tuple([steps] + list(x_advs.shape))
+            # print(noise_shape)
+            rv = ep.normal(x_advs, noise_shape)
+        rv /= atleast_kd(ep.norms.l2(flatten(rv, keep=1), -1), rv.ndim) + 1e-12
+        # scaled_rv = atleast_kd(ep.expand_dims(delta, 0), rv.ndim) * rv
+        scaled_rv = delta * rv
+
+        perturbed = ep.expand_dims(x_advs, 0) + scaled_rv
+        perturbed = ep.clip(perturbed, 0, 1)
+
+        rv = (perturbed - x_advs) / 2
+
+        multipliers_list: List[ep.Tensor] = []
+        for step in range(steps):
+            decision = self.is_adversarial(perturbed[step].raw.unsqueeze(1))
+            self.iter +=1
+            multipliers_list.append(ep.ones(x_advs,1) if decision else -ep.ones(x_advs,1))
+            #     ep.where(
+            #         decision,
+            #         ep.ones(x_advs, (len(x_advs,))),
+            #         -ep.ones(x_advs, (len(x_advs,))),
+            #     )
+            # )
+        # (steps, bs, ...)
+        multipliers = ep.stack(multipliers_list, 0)
+        # print(multipliers)
+        
+        vals = ep.where(
+            ep.abs(ep.mean(multipliers, axis=0, keepdims=True)) == 1,
+            multipliers,
+            multipliers - ep.mean(multipliers, axis=0, keepdims=True),
+        )
+        grad = ep.mean(atleast_kd(vals, rv.ndim) * rv, axis=0)
+
+        grad /= ep.norms.l2(atleast_kd(flatten(grad), grad.ndim)) + 1e-12
+        # print('grad steps:', steps)
+        return grad, ep.mean(multipliers, axis=0).raw.squeeze(0).numpy()
+    
+    def perlin_gradients(self, x_advs, steps, delta, freq):
+        # noise_shape = tuple([steps] + list(x_advs.shape))
+        rv = pn.create_perlin_noise(x_advs.shape[-1], color=False, batch_size=steps, normalize=False, freq=freq)
+        rv = ep.astensor(torch.tensor(rv).unsqueeze(1))
+        # print(rv.shape)
+        # rv = ep.normal(x_advs, noise_shape)
         rv /= atleast_kd(ep.norms.l2(flatten(rv, keep=1), -1), rv.ndim) + 1e-12
         # scaled_rv = atleast_kd(ep.expand_dims(delta, 0), rv.ndim) * rv
         scaled_rv = delta * rv

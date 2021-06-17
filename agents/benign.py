@@ -1,5 +1,5 @@
 from typing import Union
-import random
+import numpy as np
 from stable_baselines3.common.type_aliases import GymEnv
 
 class RandomAgent:
@@ -14,13 +14,13 @@ class RandomAgent:
     def move(self):
 
         # Check consequences of returning clipped actions instead of actions
-        action = random.uniform(0, 0.2)
+        action = np.random.uniform(0, 0.2)
         new_obs, reward, done, info, agent, next_agent = self.env.step(action)
         
         return new_obs, reward, done, info, agent, next_agent
     
     def predict(self, obs, state = None, deterministic = False):
-        action = random.uniform(0, 0.2)
+        action = np.random.uniform(0, 0.2)
         state = None
         return action, state
         

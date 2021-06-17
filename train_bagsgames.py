@@ -37,14 +37,15 @@ def objective(trial):
     lr = trial.suggest_float('lr',0.00001, 0.001, step=0.00001)
     gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
     ent_coef = trial.suggest_float('ent_coef', 0, 1e-4, step=1e-4)
-    inter = trial.suggest_categorical('intercept', [1,2,3,5,8,10])
+    # inter = trial.suggest_categorical('intercept', [1,2,3,5,8,10])
+    inter = 10 # to cover benign and adv queries
     reward = trial.suggest_categorical('reward', [1,2,3])
 
     transform=transforms.ToTensor()
     dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     
     # Create environment
-    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, rewarder=reward, defended=defended, intercept = inter, seed=seed)
+    env = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, rewarder=reward, defended=defended, intercept = inter)
     total_timesteps = timesteps
     
     interceptor = RPPO(policy="MlpPolicy",
@@ -105,6 +106,7 @@ def objective(trial):
             if done:
                 # term_obs = agents[1].env.get_obs()
                 agents[0].proceed(obs, reward, False, info)
+                # print(info['gap'], info['epsilon'])
                 # agents[0].set_last(obs, False)
                 done, curr, nxt, n_steps = reset()
             else:
@@ -116,7 +118,7 @@ def objective(trial):
     adversary.save("mods/games/bagsgamesadv_" + str(trial.number) + "_model.pt")
     
     # Make evaluation env
-    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rewarder=reward, intercept = inter, seed=seed)
+    envv = gym.make("BagsGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rewarder=reward, intercept = inter)
     # Load the trained agents
     interceptor = RPPO.load("mods/games/bagsgamesint_" + str(trial.number) + "_model.pt", envv, "interceptor")
     adversary = RPPO.load("mods/games/bagsgamesadv_" + str(trial.number) + "_model.pt", envv, "adversary")
@@ -142,6 +144,7 @@ def objective(trial):
 def check_full(agents):
     for i in range(2):
         if agents[i].rollout_buffer.full:
+        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
             agents[i].train()
@@ -162,5 +165,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # Create a new optuna study.
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=1)
     # train(args)

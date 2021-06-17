@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import math
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 np.seterr(invalid='raise')
 
 class BagsSkipCIFAR(gym.Env):

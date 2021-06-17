@@ -28,18 +28,19 @@ def objective_hsja(trial):
     ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
     reward = trial.suggest_categorical('reward', [1,2,3,4,5])
     scale = trial.suggest_categorical('scale', [40,200,400])
+    perlin = trial.suggest_categorical('perlin', [0,1])
     
     # Create environment
-    env = gym.make("HsjaSkip-v0", steps=5000, rewarder=reward, dataset=dataset, scale=scale)
+    env = gym.make("HsjaSkip-v0", steps=5000, rewarder=reward, dataset=dataset, scale=scale, perlin=perlin)
     """
     Best parameters: {'architecture': 32, 'buffer': 128, 'batch': 64, 'sde': False, 'lr': 0.00053, 
                       'gamma': 0.89, 'ent_coef': 0.0001, 'reward': 1}
-    Best mean_epsilon: 2.607
+    Best mean_eps: 2.607
     
-    2nd best: {'architecture': 32, 'buffer': 512, 'batch': 16, 'lr': 0.0005, 'gamma': 0.88,
-               'ent_coef': 0.001, 'reward': 1}.
+    2nd best: {'architecture': 64, 'buffer': 256, 'batch': 16, 'lr': 0.001,
+               'gamma': 0.94, 'ent_coef': 0, 'reward': 2, 'scale': 400}
     
-    Beast mean_eps: 2.643
+    Beast mean_eps:  2.613 
     """
     
     model = PPO(
@@ -48,7 +49,7 @@ def objective_hsja(trial):
         n_steps=buffer,
         batch_size=batch,
         learning_rate=lr,
-        gamma=gamma,
+        gamma=round(gamma,2),
         tensorboard_log=None,
         ent_coef = ent_coef,
         # use_sde=sde,
