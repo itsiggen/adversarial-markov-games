@@ -1,5 +1,6 @@
 import argparse
 import torch
+import numpy as np
 from torchvision import datasets, transforms
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,14 +11,13 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
+import copy
 
-# Implementation from https://github.com/akamaster/pytorch_resnet_cifar10
+# This implementation is inspired from https://github.com/akamaster/pytorch_resnet_cifar10
 
 __all__ = ['ResNet', 'resnet20', 'resnet32', 'resnet44', 'resnet56']
 
 def _weights_init(m):
-    classname = m.__class__.__name__
-    #print(classname)
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
         init.kaiming_normal_(m.weight)
 
@@ -96,6 +96,71 @@ class ResNet(nn.Module):
         return out
 
 
+class LinfPGDAttack(object):
+    def __init__(self, model=None, epsilon=0.03, k=20, a=0.007, 
+        random_start=True, device='cpu'):
+        """
+        Attack parameter initialization. The attack performs k steps of
+        size a, while always staying within epsilon from the initial
+        point.
+        https://github.com/MadryLab/mnist_challenge/blob/master/pgd_attack.py
+        """
+        self.model = model
+        self.epsilon = epsilon
+        self.k = k
+        self.a = a
+        self.device = device
+        self.rand = random_start
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def perturb(self, X_nat, y):
+        """
+        Given examples (X_nat, y), returns adversarial
+        examples within epsilon of X_nat in l_infinity norm.
+        """
+        if self.rand:
+            X = X_nat + np.random.uniform(-self.epsilon, self.epsilon,
+                X_nat.shape).astype('float32')
+        else:
+            X = np.copy(X_nat)
+
+        for i in range(self.k):
+            X_var = torch.from_numpy(X).to(self.device)
+            X_var.requires_grad=True
+            y_var = torch.LongTensor(y).to(self.device)
+
+            # print(next(self.model.parameters()).device)
+            scores = self.model(X_var)
+            loss = self.loss_fn(scores, y_var)
+            loss.backward()
+            grad = X_var.grad.data.cpu().numpy()
+
+            X += self.a * np.sign(grad)
+
+            X = np.clip(X, X_nat - self.epsilon, X_nat + self.epsilon)
+            X = np.clip(X, 0, 1) # ensure valid pixel range
+
+        return X
+    
+def adv_train(X, y, model, adversary):
+    """
+    Adversarial training. Returns pertubed mini batch.
+    """
+    # While adversarially training we take a snapshot of 
+    # the model at each batch to compute grad and leave 
+    # the optimization step unaffected
+    model_cp = copy.deepcopy(model)
+    for p in model_cp.parameters():
+        p.requires_grad = False
+    model_cp.eval()
+    
+    adversary.model = model_cp
+
+    X_adv = adversary.perturb(X.numpy(), y)
+
+    return torch.from_numpy(X_adv)
+
+
 def resnet20():
     return ResNet(BasicBlock, [3, 3, 3])
 
@@ -115,6 +180,10 @@ parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
+parser.add_argument('--adv-train', default=True, type=bool,
+                    help='adversarial training (default: False)')
+parser.add_argument('--delay', default=100, type=int, 
+                    help='delay in epochs before adversarial training (default: 100)')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
@@ -123,7 +192,7 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--print-freq', '-p', default=50, type=int,
+parser.add_argument('--print-freq', '-p', default=100, type=int,
                     metavar='N', help='print frequency (default: 50)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
@@ -131,21 +200,20 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
-parser.add_argument('--half', dest='half', action='store_true',
-                    help='use half-precision(16-bit) ')
+parser.add_argument('--half', default=False, dest='half', action='store_true',
+                    help='use half-precision(16-bit)')
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
                     default='save_temp', type=str)
 parser.add_argument('--save-every', dest='save_every',
                     help='Saves checkpoints at every specified number of epochs',
-                    type=int, default=10)
+                    type=int, default=2000)
 best_prec1 = 0
 
 
 def main():
     global args, best_prec1
     args = parser.parse_args()
-
 
     # Check the save_dir exists or not
     if not os.path.exists(args.save_dir):
@@ -180,7 +248,7 @@ def main():
             normalize,
         ]), download=True),
         batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True)
+        num_workers=args.workers, pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='./data', train=False, transform=transforms.Compose([
@@ -188,10 +256,13 @@ def main():
             normalize,
         ])),
         batch_size=128, shuffle=False,
-        num_workers=args.workers, pin_memory=True)
+        num_workers=args.workers, pin_memory=False)
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
+    
+    # define adversary
+    adversary = LinfPGDAttack(device='cuda')
 
     if args.half:
         model.half()
@@ -204,12 +275,6 @@ def main():
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                         milestones=[100, 150], last_epoch=args.start_epoch - 1)
 
-    if args.arch in ['resnet1202', 'resnet110']:
-        # for resnet1202 original paper uses lr=0.01 for first 400 minibatches for warm-up
-        # then switch back. In this setup it will correspond for first epoch.
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = args.lr*0.1
-
 
     if args.evaluate:
         validate(val_loader, model, criterion)
@@ -219,7 +284,7 @@ def main():
 
         # train for one epoch
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch, args, adversary)
         lr_scheduler.step()
 
         # evaluate on validation set
@@ -234,15 +299,18 @@ def main():
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(args.save_dir, 'checkpoint.th'))
+            }, is_best, filename=os.path.join(args.save_dir, 'checkpoint.pt'))
 
+
+        name = 'model_adv.pt' if args.adv_train else 'model.pt'
+            
         save_checkpoint({
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(args.save_dir, 'model.th'))
+        }, is_best, filename=os.path.join(args.save_dir, name))
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, args, adversary):
     """
         Run one train epoch
     """
@@ -255,13 +323,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
 
     end = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (data, target) in enumerate(train_loader):
 
         # measure data loading time
         data_time.update(time.time() - end)
 
         target = target.cuda()
-        input_var = input.cuda()
+        input_var = data.cuda()
         target_var = target
         if args.half:
             input_var = input_var.half()
@@ -269,18 +337,28 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # compute output
         output = model(input_var)
         loss = criterion(output, target_var)
-
+        
+        # optional adv loss
+        if args.adv_train and epoch+1 > args.delay:
+            # use predicted label to prevent label leaking
+            y_pred = torch.from_numpy(np.argmax(model(input_var).data.cpu().numpy(), axis=1)) 
+            x_adv = adv_train(data, y_pred, model, adversary)
+            x_adv = x_adv.cuda()
+            loss_adv = criterion(model(x_adv), target)
+            loss = (loss + loss_adv) / 2
+            
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         output = output.float()
-        loss = loss.float()
+        loss = loss.float()            
+        
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
+        losses.update(loss.item(), data.size(0))
+        top1.update(prec1.item(), data.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -309,9 +387,9 @@ def validate(val_loader, model, criterion):
 
     end = time.time()
     with torch.no_grad():
-        for i, (input, target) in enumerate(val_loader):
+        for i, (data, target) in enumerate(val_loader):
             target = target.cuda()
-            input_var = input.cuda()
+            input_var = data.cuda()
             target_var = target.cuda()
 
             if args.half:
@@ -326,8 +404,8 @@ def validate(val_loader, model, criterion):
 
             # measure accuracy and record loss
             prec1 = accuracy(output.data, target)[0]
-            losses.update(loss.item(), input.size(0))
-            top1.update(prec1.item(), input.size(0))
+            losses.update(loss.item(), data.size(0))
+            top1.update(prec1.item(), data.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)

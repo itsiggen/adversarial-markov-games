@@ -12,17 +12,16 @@ class RandomAgent:
         self.env = env
             
     def move(self):
-
         # Check consequences of returning clipped actions instead of actions
         action = np.random.uniform(0, 0.2)
-        new_obs, reward, done, info, agent, next_agent = self.env.step(action)
+        new_obs, reward, done, info = self.env.step([action])
         
-        return new_obs, reward, done, info, agent, next_agent
+        return new_obs, reward, done, info
     
     def predict(self, obs, state = None, deterministic = False):
         action = np.random.uniform(0, 0.2)
         state = None
-        return action, state
+        return [action], state
         
     def proceed(self, new_obs, rewards, dones, infos):
         pass

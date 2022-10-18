@@ -6,7 +6,67 @@ import torchvision.transforms as transforms
 import numpy as np
 import copy
 
-# Implementation by: https://github.com/wanglouis49/pytorch-adversarial_box
+# This implementation is inspired from https://github.com/wanglouis49/pytorch-adversarial_box
+
+def to_var(x, requires_grad=False, volatile=False):
+    """
+    Varialbe type that automatically choose cpu or cuda
+    """
+    if torch.cuda.is_available():
+        x = x.cuda()
+    return Variable(x, requires_grad=requires_grad, volatile=volatile)
+
+def pred_batch(x, model):
+    """
+    batch prediction helper
+    """
+    y_pred = np.argmax(model(to_var(x)).data.cpu().numpy(), axis=1)
+    return torch.from_numpy(y_pred)
+
+
+def test(model, loader, blackbox=False, hold_out_size=None):
+    """
+    Check model accuracy on model based on loader (train or test)
+    """
+    model.eval()
+
+    num_correct, num_samples = 0, len(loader.dataset)
+
+    if blackbox:
+        num_samples -= hold_out_size
+
+    for x, y in loader:
+        x_var = to_var(x, volatile=True)
+        scores = model(x_var)
+        _, preds = scores.data.cpu().max(1)
+        num_correct += (preds == y).sum()
+
+    acc = float(num_correct)/float(num_samples)
+    print('Got %d/%d correct (%.2f%%) on the clean data' 
+        % (num_correct, num_samples, 100 * acc))
+
+    return acc
+
+class LeNet5(nn.Module):
+    def __init__(self):
+        super(LeNet5, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1, stride=1)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.maxpool1 = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1, stride=1)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.maxpool2 = nn.MaxPool2d(2)
+        self.linear1 = nn.Linear(7*7*64, 200)
+        self.relu3 = nn.ReLU(inplace=True)
+        self.linear2 = nn.Linear(200, 10)
+
+    def forward(self, x):
+        out = self.maxpool1(self.relu1(self.conv1(x)))
+        out = self.maxpool2(self.relu2(self.conv2(out)))
+        out = out.view(out.size(0), -1)
+        out = self.relu3(self.linear1(out))
+        out = self.linear2(out)
+        return out
 
 class LinfPGDAttack(object):
     def __init__(self, model=None, epsilon=0.3, k=40, a=0.01, 
@@ -70,73 +130,13 @@ def adv_train(X, y, model, criterion, adversary):
 
     return torch.from_numpy(X_adv)
 
-def to_var(x, requires_grad=False, volatile=False):
-    """
-    Varialbe type that automatically choose cpu or cuda
-    """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return Variable(x, requires_grad=requires_grad, volatile=volatile)
-
-
-def pred_batch(x, model):
-    """
-    batch prediction helper
-    """
-    y_pred = np.argmax(model(to_var(x)).data.cpu().numpy(), axis=1)
-    return torch.from_numpy(y_pred)
-
-
-def test(model, loader, blackbox=False, hold_out_size=None):
-    """
-    Check model accuracy on model based on loader (train or test)
-    """
-    model.eval()
-
-    num_correct, num_samples = 0, len(loader.dataset)
-
-    if blackbox:
-        num_samples -= hold_out_size
-
-    for x, y in loader:
-        x_var = to_var(x, volatile=True)
-        scores = model(x_var)
-        _, preds = scores.data.cpu().max(1)
-        num_correct += (preds == y).sum()
-
-    acc = float(num_correct)/float(num_samples)
-    print('Got %d/%d correct (%.2f%%) on the clean data' 
-        % (num_correct, num_samples, 100 * acc))
-
-    return acc
-
-class LeNet5(nn.Module):
-    def __init__(self):
-        super(LeNet5, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1, stride=1)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.maxpool1 = nn.MaxPool2d(2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1, stride=1)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.maxpool2 = nn.MaxPool2d(2)
-        self.linear1 = nn.Linear(7*7*64, 200)
-        self.relu3 = nn.ReLU(inplace=True)
-        self.linear2 = nn.Linear(200, 10)
-
-    def forward(self, x):
-        out = self.maxpool1(self.relu1(self.conv1(x)))
-        out = self.maxpool2(self.relu2(self.conv2(out)))
-        out = out.view(out.size(0), -1)
-        out = self.relu3(self.linear1(out))
-        out = self.linear2(out)
-        return out
-
 def main():
     # Hyper-parameters
     param = {
-        'batch_size': 128,
+        'batch_size': 64,
         'test_batch_size': 100,
         'num_epochs': 15,
+        'adv_train': False,
         'delay': 10,
         'learning_rate': 1e-3,
         'weight_decay': 5e-4,
@@ -182,7 +182,7 @@ def main():
             loss = criterion(net(x_var), y_var)
     
             # adversarial training
-            if epoch+1 > param['delay']:
+            if param['adv_train'] and epoch+1 > param['delay']:
                 # use predicted label to prevent label leaking
                 y_pred = pred_batch(x, net)
                 x_adv = adv_train(x, y_pred, net, criterion, adversary)
@@ -200,7 +200,10 @@ def main():
     
     test(net, loader_test)
     
-    torch.save(net.state_dict(), 'mnist_cnn_adv.pt')
+    if param['adv_train']:
+        torch.save(net.state_dict(), 'mnist_cnn_adv.pt')
+    else:
+        torch.save(net.state_dict(), 'mnist_cnn.pt')
 
 if __name__ == '__main__':
     main()

@@ -11,14 +11,12 @@ from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.buckets import l2
 import utils.pnoise as pn
-from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
 from collections import deque
-import matplotlib.pyplot as plt
+from models.trainMNISTtorch import Net
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-np.seterr(invalid='raise')
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 class BagsSkip(gym.Env):
     def __init__(
@@ -30,7 +28,7 @@ class BagsSkip(gym.Env):
         nonadaptive = False,
         train = True,
         rewarder = 1,
-        scale = 20,
+        scale = 25,
         dataset = None,
         seed = 2,
         tensorboard = False
@@ -50,20 +48,18 @@ class BagsSkip(gym.Env):
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
         # Observation space
-        self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
 
-        # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
+        # Load MNIST pytorch CNN model -- 99.1% acc -- 98.6% acc adversarially trained
         self.dataset = dataset
+        self.mode = Net()
         if defended:
-            self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=torch.device('cpu')))
-            self.mode.eval()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=device))
         else:
-            self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-            self.mode.eval()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt', map_location=device))
+        self.mode.eval()
 
-        self.model = PyTorchModel(self.mode, bounds=(0, 1))
+        self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 28
         self.resets = 0
@@ -109,7 +105,7 @@ class BagsSkip(gym.Env):
         self.gain_moving = 0.1
         slope = 0.5
         # Target epsilon
-        self.epsilon = 1
+        # self.epsilon = 1
         self.actions = []
         self.done = False
         self.success = False
@@ -144,6 +140,10 @@ class BagsSkip(gym.Env):
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        ### EXTRA
+        observation.append(self.iter / 5000)
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         # observation.extend(pos)
         # observation = np.append(observation, np.ones(30))
 
@@ -154,8 +154,8 @@ class BagsSkip(gym.Env):
             print("nan")
         self.iter += 1
         
-        self.converged = self.dist < self.epsilon
-        if self.converged or self.iter >= self.steps:
+        # self.converged = self.dist < self.epsilon
+        if self.iter >= self.steps:
             self.tb.close()
             self.done = True
         
@@ -277,10 +277,13 @@ class BagsSkip(gym.Env):
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        ### EXTRA
         # observation.extend(pos)
         # observation = np.append(observation, hist)
         # observation.append(self.gain)
-        # observation.append(self.iter / self.steps)
+        observation.append(self.iter / 5000)
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         # print(observation)
         
         return observation

@@ -109,5 +109,3 @@ def create_perlin_noise(px, seed=None, color=True, batch_size=1, normalize=True,
     if normalize:
         output /= np.linalg.norm(output.reshape(batch_size, -1), axis=1)
     return output
-
-a = create_perlin_noise(28, color=True, batch_size=100, normalize=False, freq=30)

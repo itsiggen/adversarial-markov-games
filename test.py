@@ -1,6 +1,7 @@
 import eagerpy as ep
 import numpy as np
 import torch
+import random
 import torchvision.models as models
 from torchvision import datasets, transforms
 from foolbox import PyTorchModel, accuracy, samples
@@ -8,6 +9,7 @@ from foolbox.attacks import BoundaryAttack, HopSkipJump
 from tensorflow.keras.models import Sequential, load_model
 from foolbox.criteria import TargetedMisclassification
 from models.trainMNISTtorch import Net
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import time
 import sys
@@ -17,6 +19,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from joblib import dump, load
 
+
+x = torch.load('./data/contrasts.pt')
+y = torch.load('./data/labels.pt')
+
+
+
+x_tr, x_ts, y_tr, y_ts = train_test_split(x, y, test_size=0.2, random_state=26, stratify=y)
+
+# df = pd.DataFrame(self.states)
 
 # instantiate a MNIST model
 # transform=transforms.ToTensor()
@@ -82,12 +93,9 @@ from joblib import dump, load
 #     print(b(i))
 
 # a = np.linalg.norm([1, 1, 1])
-
-
-b ='asa'
-c = 'dfgdf'
-
-d = b+c
+# d = 3
+# inc = random.randrange(9, 10)
+# d = (d + inc) % 10
 
 #     else:
 #         clf3 = joblib.load('../models/RFC.pkl')

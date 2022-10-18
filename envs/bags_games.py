@@ -9,9 +9,9 @@ from foolbox.tensorboard import TensorBoard
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.queues import Queues, l2
+from utils.queues import Queues, Chain, l2
 import utils.pnoise as pn
-from utils.utils import get_is_adversarial
+from utils.utils import get_is_adversarial, GameStates
 from models.trainMNISTtorch import Net
 from models.trainAdvMNISTtorch import LeNet5
 from collections import deque
@@ -25,15 +25,16 @@ np.seterr(invalid='raise')
 class BagsGames(gym.Env):
     def __init__(
         self,
-        steps: int = 1000,
+        steps: int = 5000,
         spherical_step: float = 1e-2,
         source_step: float = 1e-2,
         defended = False,
         adaptive: int = 0,
         ratio_benign = 0.5,
         train = True,
-        rewarder = 1,
-        scale = 20,
+        rint = 1,
+        radv = 1,
+        scale = 5,
         dataset = None,
         intercept = 1,
         device = 'cpu',
@@ -47,15 +48,21 @@ class BagsGames(gym.Env):
         self.source_step = source_step
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
         self.ratio_benign = ratio_benign
-        self.rewarder = rewarder
+        self.train = train
+        self.rint = rint
+        self.radv = radv
         self.intercept = intercept
         self.scale = scale
         self.tensorboard = tensorboard
+        self.chain = Chain(nrQueues=3, dataset='mnist')
+        
+        # random state for benign query generation
+        self.rn = np.random.RandomState(1337)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
-            'interceptor': spaces.Box(low=0, high=1, shape=(300,), dtype=np.float32)
+            'adversary': spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32),
+            'interceptor': spaces.Box(low=-1, high=1, shape=(77,), dtype=np.float32)
             })
 
         # Actions space
@@ -66,14 +73,12 @@ class BagsGames(gym.Env):
         
         # Load MNIST pytorch CNN model -- 99.1% acc -- 98.9% acc adversarially trained
         self.dataset = dataset
+        self.mode = Net()
         if defended:
-            self.mode = LeNet5()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt'))
-            self.mode.eval()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn_adv.pt', map_location=device))
         else:
-            self.mode = Net()
-            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt'))
-            self.mode.eval()
+            self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt', map_location=device))
+        self.mode.eval()
 
         self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
@@ -124,8 +129,8 @@ class BagsGames(gym.Env):
         # Moving average of the step
         self.step_moving = 0.1
         self.gain_moving = 0.1
-        # Initialize query queues
-        self.queues = Queues(nrQueues=2, dataset='mnist')
+        # Reset queues
+        self.chain.reset()
         # Target epsilon
         self.epsilon = 1
         self.correct = []
@@ -134,6 +139,7 @@ class BagsGames(gym.Env):
         # Set current and next player
         self.curr = 1
         self.next = 0
+        self.index = 0
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -154,7 +160,7 @@ class BagsGames(gym.Env):
     
         # create queues to track various statistic used to derive the state
         # success rate, step size, relative location, progress in episode
-        self.stats_is_adv = deque(maxlen=30)
+        self.stats_is_adv = deque(maxlen=300)
         self.dist_derivative = deque(maxlen=30)
         self.improve_time_avg = deque(maxlen=30)
         self.moving_avg_step_dist = deque(maxlen=30)
@@ -163,7 +169,8 @@ class BagsGames(gym.Env):
         self.candidate = self.best_advs
     
         # Return observation for interceptor as it's the first agent to move
-        obs, ix, self.lastStep, self.alt = self.observation_int(self.logits, self.best_advs)
+        # obs, ix, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, self.best_advs)
+        obs, self.span = self.obs_int(self.logits, self.best_advs)
         
         # observation = []
         # observation.append(np.float32(0.0))
@@ -185,28 +192,33 @@ class BagsGames(gym.Env):
         if self.curr == 1 or self.curr == 2:
             # Int responds to adv or ben
             self.past = self.curr
-            obs, r, done, info = self.step_int(action)
+            obs, r, done = self.step_int(action)
             self.roll_next()
-            return obs, r, done, info, self.curr, self.next
+            info = self.get_info()
+            # return obs, r, done, info, self.curr, self.next
+            return obs, r, done, info
         elif self.curr == 0:
             if self.next == 1:
                 # Adv follows int
-                obs, r, done, info = self.step_adv(action)
+                obs, r, done = self.step_adv(action)
             elif self.next == 2:
                 # Ben follows int
-                obs, r, done, info = self.step_ben(action)
+                obs, r, done = self.step_ben(action)
             self.next = 0
-            return obs, r, done, info, self.curr, self.next
+            info = self.get_info()
+            return obs, r, done, info
             
     def step_int(self, action):
         # Scale intercept
         action = self.scale_intercept(action)
         if self.curr == 1:
             # Candidate remains adversarial only if outside the containment area
-            # print(self.lastStep, action)
-            candid = self.switch(self.lastStep, action)
+            # print(action, self.lastStep, self.index)
+            # candid = self.switch(self.lastStep, self.maxStep, action)
+            candid, _ = self.swap(self.span, action)
             # print(self.is_adv, candid)
             self.is_adv = np.logical_and(self.is_adv, candid)
+            self.rew_adv = self.is_adv
           
             self.stats_is_adv.append(self.is_adv)
             
@@ -258,32 +270,42 @@ class BagsGames(gym.Env):
             # self.update_tb(is_best_adv, cond
     
             # store obs so it can be returned from benign
-            self.obs = self.observation_adv()
+            self.obs = self.obs_adv()
 
-            r = self.reward_adv(self.rewarder)
-            info = self.get_info()
-            # Set state to interceptor
-            self.curr = 0
-            return self.obs, r, self.done, info
+            r = self.reward_adv(self.radv)
+            # info = self.get_info()
+            # return self.obs, r, self.done
         
         elif self.curr == 2:
             # Classify benign input
-            if self.switch(self.lastStep, action):
-                # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
+            # print(action, self.lastStep)
+            # if self.switch(self.lastStep, self.maxStep, action):
+            #     # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
+            #     ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
+            # else:
+            #     ans = self.alt
+            candid, alt = self.swap(self.span, action)
+            if candid:
                 ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
             else:
-                ans = self.alt
+                ans = alt
+            
             # Check if benign is labeled correctly
-            # print(ans, self.label)
+            # print(self.label, ans)
             self.check_bn = self.label==ans
             # print(self.check_bn)
             self.correct.append(self.check_bn)
+            # print(np.mean(self.correct))
             
             # Random agent gonna random
             # obs, info = {}
-            # Set state to interceptor
-            self.curr = 0
-            return self.obs, 0, self.done, {}
+            r = 0
+        
+        self.act = action
+        self.rad = min(self.span)
+        # Set state to interceptor 
+        self.curr = 0
+        return self.obs, r, self.done
                  
     def step_adv(self, action):
         self.iter += 1
@@ -325,41 +347,66 @@ class BagsGames(gym.Env):
         # Normal attack flow is interrupted here, generate obs for interceptor
         # where the final decision on is_adv is made
             
-        obs, self.index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(self.index), self.candidate, self.rewarder)
-        info = self.get_info()
+        # obs, self.index, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, self.candidate)
+        obs, self.span = self.obs_int(self.logits, self.candidate)
+        # if self.index == 1: print(self.index, self.resets)
+        # r = self.reward_int(self.queues.getStepSizeQueue(self.index), self.candidate, self.rint)
+        r = self.reward_int(self.chain.getStepSizeQueue(0), self.candidate, self.rint)
+        # info = self.get_info()
         # Set state to adversary
         self.curr = 1
-        return obs, r, self.done, info
+        return obs, r, self.done
         
     def step_ben(self, action):
         self.queries += 1
         candidate, self.label = self.get_benign(action)
         self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1))
-        obs, self.index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(self.index), candidate, self.rewarder)
-        info = self.get_info()
+        # obs, self.index, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, candidate)
+        obs, self.span = self.obs_int(self.logits, candidate)
+        # r = self.reward_int(self.queues.getStepSizeQueue(self.index), candidate, self.rint)
+        r = self.reward_int(self.chain.getStepSizeQueue(0), candidate, self.rint)
+        # info = self.get_info()
         # Set state to benign
         self.curr = 2
-        return obs, r, self.done, info
+        return obs, r, self.done
+    
+    # def observation_int(self, logits, query):
+    #     # Intercept the last query, adversarial or benign
+    #     probs = torch.nn.functional.softmax(logits, dim=1)
+    #     # print(type(query))
+    #     # index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
+    #     index = self.queues.addQuery(query, probs)
+    #     # print(self.next, index+1)
+    #     obs = self.queues.getState(index)
+    #     # print(obs)
+        
+    #     # obs = np.random.uniform(0,1,300)
+    #     # obs = np.asarray(obs)
+    #     # print(obs)
+    #     # if self.iter == 2:
+    #     #     self.obss = obs
+    #     # if self.iter > 2:
+    #     #     obs = self.obss
+    #     # print(self.benign)
+    #     lastStep, maxStep = self.queues.getLastStepQueue(index)
+    #     # print(lastStep)
+    #     origin = self.queues.getOriginQueue(index)
 
-    def observation_int(self, logits, query):
+    #     return obs, index, lastStep, maxStep, origin
+    
+    def obs_int(self, logits, query):
         # Intercept the last query, adversarial or benign
         probs = torch.nn.functional.softmax(logits, dim=1)
-        # print(type(query))
-        # index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
-        index = self.queues.addQuery(query, probs)
-        # print(self.next, index+1)
-        obs = self.queues.getState(index)
-        # print(self.benign)
-        # print(bucketIndex)
-        lastStep = self.queues.getLastStepQueue(index)
+        span = self.chain.checkQuery(query, probs)
+        # TODO: try different states
+        obs = self.chain.retState()
+        obs = np.round(obs,2)
+        self.obs_int_state = obs
+        # origin = self.chain.getOriginQueue(1)
         # print(lastStep)
-        origin = self.queues.getOriginQueue(index)
-
-        return obs, index, lastStep, origin
+        return obs, span
     
-    def observation_adv(self):
+    def obs_adv(self):
         # History of success/fail, goal and/or distance to goal, (history of step sizes)
         
         # Use dist in place of moving dist
@@ -375,7 +422,10 @@ class BagsGames(gym.Env):
         
         # pos = self.best_advs[::4,::4].flatten().tolist()
         
+        observation.append(self.iter/5000)
         observation.append(np.mean(self.stats_is_adv))
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         observation.append(loc)
         observation.append(slope)
         observation.append(self.improve_avg)
@@ -442,16 +492,17 @@ class BagsGames(gym.Env):
                 # Reward keeping average dist of queries close to starting point
                 r = 1 / (l2(self.starting_point, cand) / self.gap)
             elif reward_nr == 4:
-                # reward big steps
-                r = 10*averageStepsize
-            # r = abs(math.log(abs(averageStepsize/self.step_ref - 1)),10)
-            # r = abs(math.log(np.linalg.norm(diff), 10))
-
+                r = -1 if self.rew_adv else 1
+            elif reward_nr == 5:
+                # reward based on the gap between intercept and smallest span
+                r = self.act - min(self.intercept, self.rad)
+                
         elif self.past == 2:
             # print(self.check_bn)
-            r = 0.5 if self.check_bn else - 0.5
+            r = 1 if self.check_bn else -1
+            # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
             
-        return r
+        return np.reshape(r, (1,))
 
     def reward1(self):
         if self.gain > 0:
@@ -502,7 +553,8 @@ class BagsGames(gym.Env):
             reward = self.reward5()
         # self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         # print("rew", reward_nr, reward)
-        return reward
+
+        return np.reshape(reward, (1,))
     
     def roll_next(self):
         # decide next query; benign with P = ratio_benign
@@ -511,7 +563,7 @@ class BagsGames(gym.Env):
         else:
             self.next = 1
             
-    def switch(self, step, action):
+    def switch(self, step, maxstep, action):
         # Return False if candidate lies within the action radius, otherwise True
         # a = torch.tensor(action)
         # b = torch.tensor(step)
@@ -519,14 +571,37 @@ class BagsGames(gym.Env):
         # If non-adaptive, return actual model decision
         if self.adaptive == 0 or self.adaptive == 1:
             return True
-        # if self.curr == 1 and step > self.intercept:
+        # if self.iter > 1:
+        #     print(step, action, self.curr, maxstep)
             # print(step, action, self.index, self.iter+self.queries, self.resets)
         # if self.curr == 1 and self.iter > 1:
         #     print('0', self.index)
         # if self.curr == 2:
             # print('1', self.index)
         #     print(step, action, "BENIGN")
-        return action[0] < step
+        return action[0]*maxstep*2 < step
+    
+    def swap(self, span, action):
+        # if self.curr == 1:
+        #     print(span, self.curr)
+        if action.shape == 1:
+            action = action[0]
+        if self.adaptive == 0:
+            inn = min(span) > 0.05*self.intercept
+        elif self.adaptive == 1:
+            inn = True
+        else:
+            inn = min(span) > action
+        # ACHTUNG! before it went
+        # alt = self.chain.addQuery(inn)
+        if self.train:
+            if self.curr == 2:
+                alt = self.chain.addQuery(True)
+            else:
+                alt = self.chain.addQuery(False)
+        else:
+            alt = self.chain.addQuery(inn)
+        return inn, alt
 
     def get_pair(self):
         startImgNr = random.randint(*self.indices)
@@ -555,9 +630,9 @@ class BagsGames(gym.Env):
         return startImg.squeeze(0).numpy(), startLabel, originImg.squeeze(0).numpy(), originLabel
     
     def get_benign(self, action):
-        nr = np.random.randint(*self.indices)
+        nr = self.rn.randint(*self.indices)
         
-        mu, sigma = 0, action # mean and standard deviation
+        mu, sigma = 0, 0.1 # mean and standard deviation
         s = np.random.normal(mu, sigma, 28*28)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(28,28).astype('float32')
@@ -575,5 +650,7 @@ class BagsGames(gym.Env):
                 "benigns" : self.queries,
                 "epsilon" : self.dist,
                 "correct" : correct,
+                "curr" : self.curr,
+                "next" : self.next,
                 "gap" : self.gap}
         return info

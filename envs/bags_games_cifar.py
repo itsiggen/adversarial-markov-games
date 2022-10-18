@@ -63,7 +63,7 @@ class BagsGamesCIFAR(gym.Env):
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
-        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
+        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- % acc adversarially trained
         self.dataset, model = load('CIFAR', defended)
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])

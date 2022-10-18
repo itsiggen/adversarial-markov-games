@@ -9,14 +9,15 @@ from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.buckets import l2
+from utils.queues import l2
+import utils.perlin as pn
 from models.loader import load
 from torchvision import transforms
 from typing import List
-import matplotlib.pyplot as plt
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 class HsjaSkipCIFAR(gym.Env):
     def __init__(
@@ -31,10 +32,10 @@ class HsjaSkipCIFAR(gym.Env):
         epsilon = 0.01,
         train = True,
         rewarder = 1,
+        scale = 200,
+        perlin = 0,
         dataset = None,
-        seed = 2,
-        tensorboard = False,
-        update_stats_every_k: int = 10
+        tensorboard = False
         ):
         super(HsjaSkipCIFAR, self).__init__()  
 
@@ -47,19 +48,20 @@ class HsjaSkipCIFAR(gym.Env):
         self.epsilon = epsilon
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
+        self.scale = scale
+        self.perlin = perlin
         self.tensorboard = tensorboard
-        random.seed(seed)
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(3,), dtype=np.float32)
         # Observation space
-        self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
 
         # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
         self.dataset, model = load('CIFAR', defended)
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
-        self.model = PyTorchModel(model, bounds=(0, 1))
+        self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 32
         self.channels = 3
@@ -77,7 +79,7 @@ class HsjaSkipCIFAR(gym.Env):
             self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
@@ -93,6 +95,8 @@ class HsjaSkipCIFAR(gym.Env):
         self.actions = []
         self.done = False
         self.success = False
+        self.startl = startLabel + 1
+        self.originl = originLabel + 1
         self.resets += 1
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
@@ -114,8 +118,13 @@ class HsjaSkipCIFAR(gym.Env):
         observation = []
         # observation.append(np.float32(1.0))
         # TODO: encode source n target class in obs
+        observation.append(np.float32(0.0))
         observation.append(np.float32(0.5))
+        ###EXTRA
         observation.append(np.float32(1.0))
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
+        ###EXTRA
         observation.append(np.float32(1.0))
         observation.append(np.float32(0.5))
         observation.append(np.float32(0.0))
@@ -126,34 +135,43 @@ class HsjaSkipCIFAR(gym.Env):
     def scale_binary(self, v):
         # Binary search parameter from [-2,2] to [0.01, 0.51]
         return (v + 2) / 10 + 0.01
+        
+    def scale_perlin(self, v):
+        act = ((v + 2) / 4) * (self.dim - 2) + 1
+        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
     
     def scale_delta(self, v):
-        # Delta from [-2,2] to [0.0001,0.0101]
-        return ((v + 2) / 400) + 0.0001
+        # Delta from [-2,2] to [0.00001,0.02001]
+        # return ((v + 2) / self.scale) + 0.00001
+        return ((v + 2) / 8)  + 1 # to [0.5,1.5]
     
     def scale_step(self, v):
-        # Jump step search from [-2,2] to [0.1,1]
-        return (v + 2) / 4 + 0.1
+        # Jump step search from [-2,2] to [0.1,0.9]
+        return (v + 2) / 5 + 0.1
     
     # try different num of grad
     def scale_grad(self, v):
         # Gradient estimation steps from [-2,2] to [50,200]
         # return (((v + 2) / 4) * 250 + 50).astype(int)
-        return ((v - 1) / 4) + 1 # to [0.25,1.25]
+        return ((v + 2) / 8) + 0.6 # to [0.6,1.1]
     
     def step(self, action):
+        action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         self.reps += 1
         self.queries_left = self.steps - self.iter 
                     
         # Scale actions to proper values
-        self.action_delta = self.scale_delta(action[0])*self.dist
+        # self.action_delta = self.scale_delta(action[0])*self.dist
+        self.action_delta = self.scale_delta(action[0])*self.select_delta(self.dist)
         if self.reps == 1: self.action_delta = 0.1*self.dist
-        self.action_step = self.scale_step(action[1])
+        self.action_step = 1.0 if self.reps == 1 else self.scale_step(action[1])
         self.action_grad = self.scale_grad(action[2])
         num_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
         self.action_grad = (num_grad * self.action_grad).astype(int)
         # self.action_binary = self.scale_binary(action[3])
+        # self.action_perlin = self.scale_perlin(action[3])
         self.action_binary = 1
+        self.action_perlin = 0
         
         # Setting actions according to vanilla HSJA
         if self.nonadaptive:
@@ -166,7 +184,7 @@ class HsjaSkipCIFAR(gym.Env):
         # To force fixed number of queries, reduce gradient estimation steps if necessary
         self.action_grad = min(self.action_grad, max(self.queries_left-16, 16))
         # Gradient Estimation
-        grad, self.mean_adv = self.approximate_gradients(self.best_advs, self.action_grad, self.action_delta)
+        grad, self.mean_adv = self.approximate_gradients(self.best_advs, self.action_grad, self.action_delta, self.action_perlin)
         # Jump Step
         # !check if gradient is correct
         self.candidate, self.jump_steps = self.jump_step(grad, self.action_step, self.best_advs)
@@ -196,7 +214,6 @@ class HsjaSkipCIFAR(gym.Env):
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True
-            print(self.dist)
         
         # if self.done:
         #     print(self.resets)
@@ -211,7 +228,8 @@ class HsjaSkipCIFAR(gym.Env):
                 "epsilon" : self.dist,
                 "actions" : action,
                 "correct" : True,
-                "iters" : self.iter}
+                "iters" : self.iter,
+                "gap" : self.gap}
         return obs, r, self.done, info
     
     def observation(self):
@@ -230,8 +248,15 @@ class HsjaSkipCIFAR(gym.Env):
         # by the binary search, grad approximation, and jump step
         observation = []
         # observation.append(1/self.bin_steps)
+        observation.append(self.iter/5000)
         observation.append((self.mean_adv+1)/2)
+        ###EXTRA
         observation.append(1/self.jump_steps)
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
+        # observation.append(1/self.startl)
+        # observation.append(1/self.originl)
+        # ###EXTRA
         observation.append(loc)
         observation.append(slope)
         observation.append(self.gain/self.gap)
@@ -272,9 +297,14 @@ class HsjaSkipCIFAR(gym.Env):
         # print('bin steps:', steps)
         return best_candidate, steps
         
-    def approximate_gradients(self, x_advs, steps, delta):
-        noise_shape = tuple([steps] + list(x_advs.shape))
-        rv = ep.normal(x_advs, noise_shape)           
+    def approximate_gradients(self, x_advs, steps, delta, freq):
+        if self.perlin:
+            rv = pn.create_perlin_noise(x_advs.shape[-1], batch_size=steps, normalize=False, freq=freq)
+            rv = ep.astensor(torch.tensor(rv).unsqueeze(1))
+        else:
+            noise_shape = tuple([steps] + list(x_advs.shape))
+            # print(noise_shape)
+            rv = ep.normal(x_advs, noise_shape)          
         rv /= atleast_kd(ep.norms.l2(flatten(rv, keep=1), -1), rv.ndim) + 1e-12
         # scaled_rv = atleast_kd(ep.expand_dims(delta, 0), rv.ndim) * rv
         scaled_rv = delta * rv
@@ -343,26 +373,49 @@ class HsjaSkipCIFAR(gym.Env):
     # =============================================================
 
     def reward1(self):
-        reward = self.gain / self.gap
+        # reward = self.gain / self.gap
+        reward = 2*self.gain
         return reward
-
+    
     # def reward2(self):
     #     fraction = self.dist / self.gap
     #     fraction_previous = (self.dist + self.gain) / self.gap
     #     reward = (1 - fraction ** 0.5) ** 2 - (1 - fraction_previous ** 0.5) ** 2
     #     return reward
     
+    # def reward2(self):
+    #     reward = 1/self.action_grad + 0.1/self.jump_steps + self.reward1()
+    #     return reward
+    
+    # def reward2(self):
+    #     reward = 10/self.action_grad + self.reward1()
+    #     return reward
+    
     def reward2(self):
-        reward = 1/self.action_grad + 1/self.jump_steps + self.reward1()
+        reward = -self.action_grad/1000 + self.reward1()
         return reward
-
+    
+    # def reward3(self):
+    #     fraction = self.dist / self.gap
+    #     reward = (1 - fraction ** 2) ** 0.5
+    #     return reward
+    
+    # def reward3(self):
+    #     reward = self.gain / self.gap
+    #     # reward = self.gain
+    #     return reward
+    
     def reward3(self):
-        fraction = self.dist / self.gap
-        reward = (1 - fraction ** 2) ** 0.5
+        reward = 10*self.gain / self.dist
+        # reward = self.gain
         return reward
-
+    
+    # def reward4(self):
+    #     reward = 1/self.action_grad + self.reward1()
+    #     return reward
+    
     def reward4(self):
-        reward = 1/self.jump_steps + self.reward1()
+        reward = 5/self.dist
         return reward
     
     # def reward5(self):
@@ -371,10 +424,20 @@ class HsjaSkipCIFAR(gym.Env):
     #         reward = abs(math.log(self.dist / self.gap))
     #     return reward
     
+    # def reward5(self):
+    #     reward = -self.action_grad/1000 + self.reward1()
+    #     return reward
+    
+    # def reward5(self):
+    #     reward = 1/self.action_grad + self.reward3()
+    #     return reward
+    
     def reward5(self):
-        reward = -self.action_grad/1000 + self.reward1()
+        reward = 0
+        if self.iter >= self.steps:
+            reward = 2*(self.gap - self.dist)/self.gap
         return reward
-
+    
     # def reward5(self):
     #     reward = 0
     #     if self.iter >= self.steps:

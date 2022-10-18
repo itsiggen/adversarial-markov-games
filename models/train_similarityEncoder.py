@@ -34,7 +34,7 @@ def contrastive_loss(y_true, y_pred):
     margin_square = K.maximum(K.square(margin) - K.square(y_pred), 0)
     return y_true * square_pred + (1 - y_true) * margin_square
 
-def create_pairs_met_noise(x, digit_indices):
+def create_pairs_with_noise(x, digit_indices):
     '''Positive and negative pair creation.
     Alternates between positive and negative pairs.
     '''
@@ -44,8 +44,8 @@ def create_pairs_met_noise(x, digit_indices):
     for d in range(num_classes):
         for i in range(n):
             z1 = digit_indices[d][i]
-            for _ in range(2):
-                mu, sigma = 0, 0.2 # mean and standard deviation
+            for _ in range(20):
+                mu, sigma = 0, 0.3 # mean and standard deviation
                 s = np.random.normal(mu, sigma, 28*28)
                 s = s.reshape(28,28,1)
                 s = np.absolute(s)
@@ -60,38 +60,7 @@ def create_pairs_met_noise(x, digit_indices):
             
     return np.array(pairs).astype('float32'), np.array(labels).astype('float32')
 
-def create_pairs_vergelijk_met_andere(x, digit_indices):
-    '''Positive and negative pair creation.
-    Alternates between positive and negative pairs.
-    '''
-    pairs = []
-    labels = []
-    n = min([len(digit_indices[d]) for d in range(num_classes)]) - 1
-    for d in range(num_classes):
-        for i in range(n):
-            z1, z2 = digit_indices[d][i], digit_indices[d][i + 1]
-            pairs += [[x[z1], x[z2]]]
-            inc = random.randrange(1, num_classes)
-            dn = (d + inc) % num_classes
-            z1, z2 = digit_indices[d][i], digit_indices[dn][i]
-            pairs += [[x[z1], x[z2]]]
-            labels += [1, 0]
-    return np.array(pairs), np.array(labels)
-
-
 def create_base_network(input_shape):
-    '''Base network to be shared (eq. to feature extraction).
-    '''
-    input = Input(shape=input_shape)
-    x = Flatten()(input)
-    x = Dense(128, activation='relu')(x)
-    x = Dropout(0.1)(x)
-    x = Dense(128, activation='relu')(x)
-    x = Dropout(0.1)(x)
-    x = Dense(128, activation='relu')(x)
-    return Model(input, x)
-
-def create_base_network_zelf(input_shape):
     '''Base network to be shared (eq. to feature extraction).
     '''
 
@@ -114,7 +83,7 @@ def create_base_network_zelf(input_shape):
     model.add(Dense(512, name='dense_1'))
     model.add(Activation('relu', name='activation_5'))
     model.add(Dropout(0.5, name='dropout_3'))
-    model.add(Dense(256, name='dense_encode'))  #256 is de encode dim van de paper (zie code)
+    model.add(Dense(256, name='dense_encode'))  #256 is the encoding dim in the stateful detection paper
     model.add(Activation('linear', name='encoding'))
     
     return model
@@ -146,26 +115,21 @@ x_train /= 255
 x_test /= 255
 input_shape = x_train.shape[1:]
 
-# create training+test positive and negative pairs
+# create training/test positive and negative pairs
 digit_indices = [np.where(y_train == i)[0] for i in range(num_classes)]
-tr_pairs, tr_y = create_pairs_met_noise(x_train, digit_indices)
+tr_pairs, tr_y = create_pairs_with_noise(x_train, digit_indices)
 
 digit_indices = [np.where(y_test == i)[0] for i in range(num_classes)]
-te_pairs, te_y = create_pairs_met_noise(x_test, digit_indices)
+te_pairs, te_y = create_pairs_with_noise(x_test, digit_indices)
 
-
-#uitAnders2 = [(numpy.subtract(base_network.predict(tr_pairs[i][0].reshape(1,28,28)),base_network.predict(tr_pairs[i][1].reshape(1,28,28)))) for i in range(100)]
-#uit = [(i,np.linalg.norm(x[0])) for i,x in enumerate(uitAnders2)]
 # network definition
-base_network = create_base_network_zelf(input_shape)
+base_network = create_base_network(input_shape)
 print("passed")
 
 input_a = Input(shape=input_shape)
 input_b = Input(shape=input_shape)
 
-# because we re-use the same instance `base_network`,
-# the weights of the network
-# will be shared across the two branches
+# re-use the same base_network to share the weights across the two branches
 processed_a = base_network(input_a)
 processed_b = base_network(input_b)
 
@@ -182,11 +146,11 @@ model.fit([tr_pairs[:, 0], tr_pairs[:, 1]], tr_y,
           epochs=epochs,
           validation_data=([te_pairs[:, 0], te_pairs[:, 1]], te_y))
 
-base_network.save('SIMILARITYmodel.h5')
-base_network.save_weights('SIMILARITYmodelWeights.h5')
+base_network.save('MNISTencoder.h5')
+base_network.save_weights('MNISTencoderweights.h5')
 
 print(model.summary())
-plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
+# plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
 # compute final accuracy on training and test sets
 y_pred = model.predict([tr_pairs[:, 0], tr_pairs[:, 1]])

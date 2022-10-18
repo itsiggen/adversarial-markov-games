@@ -34,13 +34,14 @@ class DummyRvecEnv(DummyVecEnv):
     
     def step_wait(self):
         for env_idx in range(self.num_envs):
-            obs, rews, dones, infos, ag, next_ag = self.envs[env_idx].step(self.actions[env_idx])
+            # print(self.actions[env_idx], env_idx)
+            obs, rews, dones, infos, = self.envs[env_idx].step(self.actions[env_idx])
             if dones:
                 # save final observation where user can get it, then reset
                 self.buf_infos[env_idx]["terminal_observation"] = obs
                 # print(self.buf_infos)
                 obs = self.envs[env_idx].reset()
-        return (obs, rews, dones, infos, ag, next_ag)
+        return (obs, rews, dones, infos)
     
     # def step_wait(self):
     #     for env_idx in range(self.num_envs):

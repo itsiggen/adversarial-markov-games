@@ -25,7 +25,7 @@ def load(dataset, defended):
 
 def mnist(defended):
     transform=transforms.ToTensor()
-    dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
+    dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     if defended:
         model = LeNet5()
         model.load_state_dict(torch.load('./models/mnist_cnn_adv.pt'))
@@ -38,9 +38,9 @@ def mnist(defended):
 
 def cifar(defended):
     transform = transforms.ToTensor()
-    dataset = datasets.CIFAR10('../data', train=False, transform=transform, download=True)
+    dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
     
-    dct = torch.load('../models/CIFARresnet20.th', map_location=torch.device('cpu'))
+    dct = torch.load('./models/CIFARresnet20.th', map_location=torch.device('cpu'))
     state_dict = dct['state_dict']
     # create new OrderedDict that does not contain `module.`
     new_state_dict = OrderedDict()

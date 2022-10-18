@@ -32,6 +32,10 @@ for env in list(gym.envs.registry.env_specs):
      if 'HsjaGames-v0' in env:
           # print('Remove {} from registry'.format(env))
           del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'TestGames-v0' in env:
+          # print('Remove {} from registry'.format(env))
+          del gym.envs.registry.env_specs[env]
 
 
 register(
@@ -72,4 +76,8 @@ register(
 register(
     id='HsjaGames-v0',
     entry_point='envs.hsja_games:HsjaGames'
+    )
+register(
+    id='TestGames-v0',
+    entry_point='envs.test_games:TestGames'
     )

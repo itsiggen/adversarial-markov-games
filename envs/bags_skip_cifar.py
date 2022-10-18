@@ -17,7 +17,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 import math
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 np.seterr(invalid='raise')
 
@@ -49,13 +49,13 @@ class BagsSkipCIFAR(gym.Env):
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
         # Observation space
-        self.observation_space = spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
 
         # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
         self.dataset, model = load('CIFAR', defended)
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
-        self.model = PyTorchModel(model, bounds=(0, 1))
+        self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 32
         self.channels = 3
@@ -138,6 +138,10 @@ class BagsSkipCIFAR(gym.Env):
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        ### EXTRA
+        observation.append(self.iter / 5000)
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         # observation.extend(pos)
         # observation = np.append(observation, np.ones(30))
 
@@ -260,6 +264,10 @@ class BagsSkipCIFAR(gym.Env):
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
+        ### EXTRA
+        observation.append(self.iter / 5000)
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         # observation.extend(pos)
         # observation = np.append(observation, hist)
         # observation.append(self.gain)

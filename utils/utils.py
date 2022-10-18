@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, TypeVar, Any
 import eagerpy as ep
 import numpy as np
+import pandas as pd
 import torch
 
 
@@ -140,7 +141,31 @@ class LpDistance(Distance):
         factor = atleast_kd(factor, x.ndim)
         clipped_perturbation = factor * p
         return restore_type(x + clipped_perturbation)
+    
+class GameStates():
+    def __init__(self):
+        self.states = []
+        self.phases = []
+        self.spans = []
+        self.labels = []
+        self.actions = []
+        
+    def add(self, lbl, state, phase, span, act):
+        self.states.append(state)
+        self.phases.append(phase)
+        self.spans.append(span)
+        self.labels.append(lbl)
+        self.actions.append(act)
 
+    def save(self, path):
+        df = pd.DataFrame(self.states)
+        # df = pd.DataFrame(list(zip(self.states, self.phases, self.spans, self.labels)),
+        #        columns = ['States', 'Phases', 'Spans', 'Labels'])
+        df['phase'] = self.phases
+        df['span'] = self.spans
+        df['label'] = self.labels
+        df['action'] = self.actions
+        df.to_csv(path, index=False)
 
 l0 = LpDistance(0)
 l1 = LpDistance(1)

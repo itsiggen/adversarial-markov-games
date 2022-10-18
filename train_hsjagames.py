@@ -8,8 +8,12 @@ from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.bags_games import BagsGames
+from envs.hsja_games import HsjaGames
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
+transform=transforms.ToTensor()
+dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+    
 def objective(trial):
     """
     Train and save the adversary and interceptor agents for BAGS
@@ -24,35 +28,50 @@ def objective(trial):
     # name = args.name
     # logdir = "./logs/"
     
-    timesteps = int(4e5)
-    steps = 5000
+    """
+    Best is Trial 10: [7.188713073730469, 0.9932314562122941] and parameters: {'lr': 5e-05, 'buffer': 512, 'batch': 64,
+    'epoch': 30, 'gamma': 0.99, 'ent_coef': 0.001, 'vf_coef': 0.5, 'intercept': 1.5, 'rint': 4}. 
+    """
+    
+    timesteps = int(6e5)
+    steps = 2150
+    eval_steps = 5000
     adaptive = 2
     ratio = 0.5
     defended = False
     seed = 2
     logdir = "./logs/"
     
-    lr = trial.suggest_float('lr',0.00001, 0.001, step=0.00001)
-    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
-    ent_coef = trial.suggest_float('ent_coef', 0, 1e-4, step=1e-4)
-    inter = trial.suggest_categorical('intercept', [1,2,3,5,8,10])
-    reward = trial.suggest_categorical('reward', [1,2,3])
+    lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001,0.00005])
+    buffer = trial.suggest_categorical('buffer', [512,1024,2048,4096])
+    batch = trial.suggest_categorical('batch', [64,128])
+    epochs = trial.suggest_categorical('epochs', [10,20,30])
+    gamma = trial.suggest_float('gamma', 0.7, 0.99, step=0.01)
+    ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
+    vf_coef = trial.suggest_categorical('vf_coef', [0,0.1,0.5])
+    inter = trial.suggest_categorical('intercept', [1,1.5,2])
+    # inter = 1
+    # radv = trial.suggest_categorical('radv', [1,2,4,5])
+    rint = trial.suggest_categorical('rint', [2,4,5])
+    radv = 1
+    # rint = 2
     
-    transform=transforms.ToTensor()
-    dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
     
     # Create environment
-    env = gym.make("HsjaGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, rewarder=reward, defended=defended, intercept = inter, seed=seed)
+    env = gym.make("HsjaGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, rint=rint, radv=radv, defended=defended, intercept=inter)
     total_timesteps = timesteps
     
     interceptor = RPPO(policy="MlpPolicy",
                 env=env,
                 agent='interceptor',
-                n_steps=2048,
+                n_steps=buffer,
+                batch_size=batch,
+                n_epochs=epochs,
                 learning_rate=lr, # 0.00039
-                gamma=gamma, # 0.92
+                gamma=round(gamma,2), # 0.92
                 tensorboard_log=None,
-                ent_coef = ent_coef, # 0.0001
+                ent_coef=ent_coef, # 0.0001
+                vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
@@ -68,6 +87,19 @@ def objective(trial):
                 verbose=0,
                 seed=seed,
                 policy_kwargs=dict(net_arch=[8,8]))
+    
+    # interceptor = RPPO.load("mods/games/hsjagamesint_best.pt", env, "interceptor",
+    #                         seed=seed,
+    #                         n_steps=buffer,
+    #                         batch_size=batch,
+    #                         learning_rate=lr, # 0.00039
+    #                         gamma=round(gamma,2), # 0.92
+    #                         vf_coef = vf_coef,
+    #                         ent_coef = ent_coef, # 0.0001
+    #                         )
+    # adversary = RPPO.load("mods/games/hsjagamesadv_best.pt", env, "adversary", seed)
+    
+    # print(interceptor.__dict__)
     
     benign = RandomAgent(env=env)
       
@@ -92,6 +124,7 @@ def objective(trial):
         # print(nxt)
         obs, reward, done, info, curr, nxt = agents[nxt].move()
         n_steps += 1
+        # print("cadence", prev, curr, nxt, reward)
 
         if curr == 0:
             # if n_steps == 1:
@@ -124,19 +157,22 @@ def objective(trial):
 
     # Save the trained agents
     print("Saving models...")
-    interceptor.save("interceptor_model")
-    adversary.save("adversary_model")
+    interceptor.save("mods/games/hsjagamesint_" + str(trial.number) + ".pt")
+    adversary.save("mods/games/hsjagamesadv_" + str(trial.number) + ".pt")
     
     # Make evaluation env
-    envv = gym.make("HsjaGames-v0", steps=steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rewarder=reward, intercept = inter, seed=seed)
+    envv = gym.make("HsjaGames-v0", steps=eval_steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rint=rint, radv=radv, intercept=inter)
     # Load the trained agents
-    interceptor = RPPO.load("interceptor_model", envv, "interceptor")
-    adversary = RPPO.load("adversary_model", envv, "adversary")
+    # " + str(trial.number) + "
+    interceptor = RPPO.load("mods/games/hsjagamesint_" + str(trial.number) + ".pt", envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/hsjagamesadv_" + str(trial.number) + ".pt", envv, "adversary", seed)
+    # interceptor = RPPO.load("mods/games/hsjagamesint_1.pt", envv, "interceptor")
+    # adversary = RPPO.load("mods/games/hsjagamesadv_1.pt", envv, "adversary")
     benign = RandomAgent(env=envv)
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=20)
     
-    res = np.asarray([mean_rint, std_rint, mean_radv, std_radv, mean_eps, start_eps, mean_acc])
+    res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(mean_eps,3), round(start_eps,3), round(mean_acc,3)])
     # np.savetxt('./logs/50benign.csv', res, delimiter=";", fmt='%1.3f')
     print(res)
     
@@ -149,7 +185,7 @@ def objective(trial):
     # df.to_csv(path1, index=False, float_format='%.3f')
     # fd.to_csv(path2, index=False, float_format='%.3f')
     
-    return mean_eps
+    return mean_eps, mean_acc
     
 def check_full(agents):
     for i in range(2):
@@ -173,4 +209,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("bags"), type=str, help="Name for experiment")
     args = parser.parse_args()
-    train(args)
+    # Create a new optuna study.
+    study = optuna.create_study(directions=['maximize', 'maximize'])
+    study.optimize(objective, n_trials=20)
+    # train(args)

@@ -5,7 +5,9 @@ import numpy as np
 import torch as th
 import gym
 import time
+from copy import deepcopy
 from .dummy_rvec_env import DummyRvecEnv
+from .normalize import RecNormalize
 from stable_baselines3 import PPO
 from stable_baselines3.common import logger, utils
 
@@ -46,9 +48,12 @@ class RPPO(PPO):
         policy_kwargs: Optional[Dict[str, Any]] = None,
         verbose: int = 0,
         seed: Optional[int] = None,
+        mode: int = 0,
+        normalize: bool = False,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
     ):
+        self.mode = mode # 0/1 = stochastic/deterministic actions
         self.agent = agent
         env.observation_space = env.observation_spaces[agent]
         env.action_space = env.action_spaces[agent]
@@ -81,6 +86,9 @@ class RPPO(PPO):
         # Define observation and action space for each type of agent
         self.observation_space = env.observation_spaces[agent]
         self.action_space = env.action_spaces[agent]
+        self.normalize = normalize
+        if normalize:
+            self.RecNorm = RecNormalize(self.observation_space, training=True)
          
     def reset_buffer(self):
         self.n_steps = 0
@@ -89,7 +97,7 @@ class RPPO(PPO):
     def close_buffer(self):
         with th.no_grad():
             # Compute value for the last timestep
-            obs_tensor = th.as_tensor(self._last_obs).to(self.device)
+            obs_tensor = th.as_tensor(np.array(self._last_obs)).to(self.device)
             _, values, _ = self.policy.forward(obs_tensor)
         self.rollout_buffer.compute_returns_and_advantage(last_values=values, dones=self._last_dones)
         
@@ -103,9 +111,15 @@ class RPPO(PPO):
 
         with th.no_grad():
             # Convert to pytorch tensor
-            obs_tensor = th.as_tensor(self._last_obs).to(self.device)
-            actions, self.values, self.log_probs = self.policy.forward(obs_tensor)
-        actions = actions.cpu().numpy()
+            obs_tensor = th.as_tensor(np.array(self._last_obs)).to(self.device)
+            if self.mode:
+                # vectorized, remove first dim to pass to predict
+                obs_tensor = th.squeeze(obs_tensor, 0)
+                actions, _ = self.policy.predict(obs_tensor, deterministic=True)
+                actions = np.expand_dims(actions, axis=0)
+            else:
+                actions, self.values, self.log_probs = self.policy.forward(obs_tensor)
+                actions = actions.cpu().numpy()
 
         # Rescale and perform action
         clipped_actions = actions
@@ -116,12 +130,16 @@ class RPPO(PPO):
         # Check consequences of returning clipped actions instead of actions
         self.actions = actions
         # print(self.actions, self.agent)
-        new_obs, reward, done, info, agent, next_agent = self.env.step(clipped_actions)
+        new_obs, reward, done, info = self.env.step(clipped_actions)
         
-        return new_obs, reward, done, info, agent, next_agent
-            
+        return new_obs, reward, done, info
+               
     def proceed(self, new_obs, rewards, dones, infos):
         self.num_timesteps += self.env.num_envs
+
+        # Normalize obs & reward
+        if self.normalize:
+            new_obs, rewards = self.RecNorm.norm(new_obs, rewards)
 
         # Update dummyvecenv buffers
         self.env.step_proceed(new_obs, rewards, dones, infos)
@@ -130,9 +148,24 @@ class RPPO(PPO):
         self.n_steps += 1
         # print(self.agent)
         # Check if rollout buffer is filled with the correct obs/rewards etc
-        self.rollout_buffer.add(self._last_obs, self.actions, rewards, self._last_dones, self.values, self.log_probs)
+        if not self.mode:
+            self.rollout_buffer.add(self._last_obs, self.actions, rewards, self._last_dones, self.values, self.log_probs)
+            # print(self._last_obs, self.actions, rewards, self._last_dones, self.values)
         self._last_obs = [new_obs]
         self._last_dones = dones
+        # print(self.agent, self.env.envs[0].past, self.env.envs[0].curr, self.env.envs[0].next, rewards)
+        
+    def predict(
+        self,
+        observation: np.ndarray,
+        state: Optional[np.ndarray] = None,
+        mask: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+
+        if self.normalize:
+            observation = self.RecNorm.normalize_obs(observation)
+        return self.policy.predict(observation, state, mask, deterministic)
     
     def set_last(self, obs, done):
         self._last_obs = [obs]
@@ -169,6 +202,8 @@ class RPPO(PPO):
         path: Union[str, pathlib.Path, io.BufferedIOBase],
         env: [GymEnv] = None,
         agent: str = "interceptor",
+        seed: Optional[int] = None,
+        normed: Optional[str] = None,
         device: Union[th.device, str] = "auto",
         **kwargs):
         """
@@ -213,18 +248,22 @@ class RPPO(PPO):
             policy=data["policy_class"],
             env=env,
             agent=agent,
+            seed=seed,
             device=device,
+            mode=1,
             _init_setup_model=False,  # pytype: disable=not-instantiable,wrong-keyword-args
         )
 
         # load parameters
         model.__dict__.update(data)
         model.__dict__.update(kwargs)
+        # set seed and mode
+        model.seed = seed
+        model.mode = 1
         model._setup_model()
 
         # put state_dicts back in place
         model.set_parameters(params, exact_match=True, device=device)
-
         # put other pytorch variables back in place
         if pytorch_variables is not None:
             for name in pytorch_variables:
@@ -234,4 +273,12 @@ class RPPO(PPO):
         # see issue #44
         if model.use_sde:
             model.policy.reset_noise()  # pytype: disable=attribute-error
+            
+        # Load normalization object:
+        if normed:
+            model.normalize=True
+            model.RecNorm = RecNormalize.load(normed)
+            model.RecNorm.training=False
+            model.RecNorm.norm_reward=False
+ 
         return model
