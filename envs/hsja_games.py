@@ -9,15 +9,12 @@ from foolbox.tensorboard import TensorBoard
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.queues import Queues, Chain, l2, Contrasts
+from utils.queues import Chain, l2, Contrasts
 from utils.utils import get_is_adversarial, GameStates
 from data.contrastive import EmbeddingNet, TripletNet
 from typing import List
 from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
-from collections import deque
 import gc
-import matplotlib.pyplot as plt
 import math
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -779,6 +776,8 @@ class HsjaGames(gym.Env):
         if action.shape == 1:
             action = action[0]
         # if self.curr == 0 or self.curr == 1:
+        #     if self.phase == 1 or self.phase == 2:
+        #         print('ADV:', span, self.curr)
         #     self.gstates.add(1, self.obs, self.phase, min(span), action)
             # if self.phase == 1 or self.phase == 2:
                 # print("STATEA", self.phase, self.iter, '%.2f'%sum(self.obs[0:25]), '%.2f'%sum(self.obs[25:50]), '%.2f'%sum(self.obs[50:75]), '%.2f'%sum(self.obs[75:100]), '%.2f'%self.obs[100], '%.2f'%self.obs[101])
@@ -787,6 +786,7 @@ class HsjaGames(gym.Env):
             # print(min(span), action[0], self.dist, self.phase, self.iter)
             # print(self.phase, self.iter)
         # if self.curr == 2:
+        #     print('BEN:', span, self.curr)
         #     self.gstates.add(0, self.obs, 3, min(span), action)
             # print("STATEB", '%.2f'%sum(self.obs[0:25]), '%.2f'%sum(self.obs[25:50]), '%.2f'%sum(self.obs[50:75]), '%.2f'%sum(self.obs[75:100]), '%.2f'%self.obs[100], '%.2f'%self.obs[101])
             # print(min(span), action[0], 'ben')

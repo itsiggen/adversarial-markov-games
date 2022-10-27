@@ -5,6 +5,7 @@ import gc
 import pandas as pd
 import numpy as np
 import optuna
+from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
@@ -24,6 +25,7 @@ def objective(trial):
     
     eval_steps = 5000
     adaptive = 2 # int adaptive
+    stt = 0 # interceptor is learning
     ratio = 0.5
     defended = False
     seed = 2
@@ -38,6 +40,7 @@ def objective(trial):
     ent_coef = 0
     vf_coef = 0.5
     inter = trial.suggest_categorical('inter', [1,2,5])
+    scale = 20
     rint = trial.suggest_categorical('rint', [2,3,4,5])
     radv = 1
     ts = trial.suggest_categorical('ts', [5e5,1e6])
@@ -48,6 +51,7 @@ def objective(trial):
                    ratio_benign=ratio,
                    adaptive=adaptive,
                    dataset=dataset,
+                   scale=scale,
                    rint=rint,
                    radv=radv,
                    defended=defended,
@@ -96,9 +100,9 @@ def objective(trial):
     curr, nxt = 1, 0
     n_steps = 0
         
-    for timestep in range(total_timesteps):
+    for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents)
+        check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves
@@ -149,7 +153,7 @@ def objective(trial):
                 
     benign = RandomAgent(env=envv)
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=30)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=15)
     # envv.gstates.save("mods/data/hsja4eval_" + str(trial.number) + ".csv")
 
     res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(start_eps,3), round(mean_eps,3), round(mean_acc,3)])
@@ -164,15 +168,15 @@ def objective(trial):
     
     return mean_eps, mean_acc
     
-def check_full(agents):
+def check_full(agents, stt):
     for i in range(2):
         if agents[i].rollout_buffer.full:
         # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            agents[i].train()
+            if stt == i or stt == 2:
+                agents[i].train()
             agents[i].reset_buffer()
-
 def reset():
     return False, 1, 0, 0
 
@@ -221,10 +225,10 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("14"), type=str, help="Model to load")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("2"), type=str, help="Model to load")
     parser.add_argument('--inter', default=float(2), type=float, help="Intercept")
-    parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
+    parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.

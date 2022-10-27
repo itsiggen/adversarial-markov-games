@@ -9,13 +9,11 @@ from foolbox.tensorboard import TensorBoard
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.queues import Queues, Chain, l2
+from utils.queues import Chain, l2
 import utils.pnoise as pn
-from utils.utils import get_is_adversarial, GameStates
+from utils.utils import get_is_adversarial
 from models.trainMNISTtorch import Net
-from models.trainAdvMNISTtorch import LeNet5
 from collections import deque
-import matplotlib.pyplot as plt
 import math
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +32,7 @@ class BagsGames(gym.Env):
         train = True,
         rint = 1,
         radv = 1,
-        scale = 5,
+        scale = 20, #default is 20
         dataset = None,
         intercept = 1,
         device = 'cpu',
@@ -582,8 +580,8 @@ class BagsGames(gym.Env):
         return action[0]*maxstep*2 < step
     
     def swap(self, span, action):
-        # if self.curr == 1:
-        #     print(span, self.curr)
+        # if self.curr == 2:
+        #     print('ADV:', span)
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
@@ -633,9 +631,9 @@ class BagsGames(gym.Env):
         nr = self.rn.randint(*self.indices)
         
         mu, sigma = 0, 0.1 # mean and standard deviation
-        s = np.random.normal(mu, sigma, 28*28)
+        s = np.random.normal(mu, sigma, self.dim*self.dim)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
-        s = s.reshape(28,28).astype('float32')
+        s = s.reshape(self.dim,self.dim).astype('float32')
         # print(s.shape)
         # print(self.dataset[nr][0].shape)
         s = np.add(self.dataset[nr][0].squeeze(0).numpy(), s)

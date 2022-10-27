@@ -24,14 +24,14 @@ def objective(trial):
     print('Training HSJA-5: AA-TD..')
     
     eval_steps = 5000
-    adaptive = 3 # both adaptive 
+    adaptive = 3 # both adaptive
     ratio = 0.5
+    stt = 1 # adversary is learning
     defended = True
     cont = 1 # contrastive model used
     seed = 2
 
     steps = trial.suggest_categorical('steps', [1000,3000,5000])
-
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
     buffer = trial.suggest_categorical('buffer', [256,512,1024])
     batch = 32
@@ -45,7 +45,6 @@ def objective(trial):
     # radv = 1
     inter = 1
     ts = 6e5
-    norm = False
     
     # Create environment
     env = gym.make("HsjaGames-v0",
@@ -79,7 +78,6 @@ def objective(trial):
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
-                normalize=norm,
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
@@ -98,7 +96,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents)
+        check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves
@@ -176,13 +174,14 @@ def objective(trial):
     
     return mean_eps
     
-def check_full(agents):
+def check_full(agents, stt):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
+        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            agents[i].train()
+            if stt == i or stt == 2:
+                agents[i].train()
             agents[i].reset_buffer()
 
 def reset():
@@ -196,7 +195,16 @@ def test(num, inter, rew):
     seed = 2
 
     # Make evaluation env
-    envv = gym.make("HsjaGames-v0", steps=eval_steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rint=rew, radv=1, intercept=inter)
+    envv = gym.make("HsjaGames-v0",
+                    steps=eval_steps,
+                    ratio_benign=ratio,
+                    adaptive=adaptive,
+                    dataset=dataset,
+                    defended=defended,
+                    train=False,
+                    rint=rew,
+                    radv=1,
+                    intercept=inter)
     
     interceptor = RPPO.load("mods/games/hsjaa4int_2.pt", envv, "interceptor", seed)
     adversary = RPPO.load("mods/games/hsjaa5adv_" + str(num) + ".pt", envv, "adversary", seed)

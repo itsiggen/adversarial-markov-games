@@ -35,18 +35,6 @@ class EmbeddingNet(nn.Module):
     def get_embedding(self, x):
         return self.forward(x)
 
-class EmbeddingNetL2(EmbeddingNet):
-    def __init__(self):
-        super(EmbeddingNetL2, self).__init__()
-
-    def forward(self, x):
-        output = super(EmbeddingNetL2, self).forward(x)
-        output /= output.pow(2).sum(1, keepdim=True).sqrt()
-        return output
-
-    def get_embedding(self, x):
-        return self.forward(x)
-
 class TripletNet(nn.Module):
     def __init__(self, embedding_net):
         super(TripletNet, self).__init__()

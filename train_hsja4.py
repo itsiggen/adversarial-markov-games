@@ -26,6 +26,7 @@ def objective(trial):
     eval_steps = 5000
     adaptive = 2 # int adaptive 
     ratio = 0.5
+    stt = 0 # interceptor is learning
     defended = True
     cont = 1 # contrastive model used
     seed = 2
@@ -52,7 +53,6 @@ def objective(trial):
     radv = 1
     inter = 1
     ts = 5e5
-    norm = False
     
     # Create environment
     env = gym.make("HsjaGames-v0",
@@ -82,7 +82,6 @@ def objective(trial):
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
-                normalize=norm,
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
      
@@ -98,7 +97,6 @@ def objective(trial):
                 verbose=0,
                 seed=seed,
                 mode=1,
-                normalize=norm,
                 policy_kwargs=dict(net_arch=[32,32]))
     
     benign = RandomAgent(env=env)
@@ -116,7 +114,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train
-        check_full(agents)
+        check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves
@@ -194,15 +192,15 @@ def objective(trial):
     
     return mean_eps, mean_acc
     
-def check_full(agents):
+def check_full(agents, stt):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
+        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            agents[i].train()
+            if stt == i or stt == 2:
+                agents[i].train()
             agents[i].reset_buffer()
-
 def reset():
     return False, 1, 0, 0
 
@@ -258,7 +256,7 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("11"), type=str, help="Model to load")
     parser.add_argument('--inter', default=float(1), type=float, help="Intercept")
     parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")

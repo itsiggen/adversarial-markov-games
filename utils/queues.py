@@ -3,10 +3,12 @@ import torch
 from scipy.spatial import distance
 from scipy.special import kl_div, rel_entr
 from tensorflow.keras.models import Sequential, load_model
-from statistics import mean
-from collections import deque
+from models.simEncMNIST import mnistNet
+from models.simEncCIFAR import cifarNet
 import tensorflow as tf
-import time
+
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 def l2(a,b):
     #L2 distance
@@ -52,22 +54,41 @@ class Contrasts():
 
 class SimEnc():
     def __init__(self, dataset):
-        if dataset == 'mnist':
-            self.similarityModel = load_model('models/MNISTencoder.h5', compile=False)
-        elif dataset == 'cifar':
-            self.similarityModel = load_model('models/CIFARencoder.pt', compile=False)
+        self.dt = dataset
+        if self.dt == 'mnist':
+            # self.similarityModel = load_model('models/MNISTencoder.h5', compile=False)
+            self.similarityModel = mnistNet()
+            self.similarityModel.load_state_dict(torch.load('models/MNISTembedding.pt', map_location=device))
+            self.similarityModel.eval()
+        elif self.dt == 'cifar':
+            # self.similarityModel = load_model('models/CIFARencoder.pt', compile=False)
+            self.similarityModel = cifarNet()
+            self.similarityModel.load_state_dict(torch.load('models/CIFARembedding.pt', map_location=device))
+            self.similarityModel.eval()
         
+    # def getSimilarityEncoding(self, query):
+    #     #start = time.time()
+    #     query = tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(query),0),3)
+    #     a = self.similarityModel.predict(query, steps=1)
+    #     # print(a.shape)
+    #     #print(time.time() - start)
+    #     return a
+    
     def getSimilarityEncoding(self, query):
-        #start = time.time()
-        query = tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(query),0),3)
-        a = self.similarityModel.predict(query, steps=1)
-        # print(a.shape)
-        #print(time.time() - start)
+        if self.dt == 'mnist':
+            with torch.no_grad():
+                a = torch.unsqueeze(torch.from_numpy(query), dim=0)
+                a = self.similarityModel(torch.unsqueeze(a, dim=0)).detach().numpy()
+        elif self.dt == 'cifar':
+            with torch.no_grad():
+                a = self.similarityModel(torch.unsqueeze(torch.from_numpy(query), dim=0)).detach().numpy()
         return a
+
 
 class Chain():
     def __init__(self, nrQueues=3, sizeState=30, train=True, dataset='mnist'):
-        self.simenc = SimEnc(dataset)      
+        self.simenc = SimEnc(dataset)
+        self.dim = 28 if dataset=='mnist' else 32
         self.sizeState = sizeState
         self.train = train
         self.nrQueues = nrQueues
@@ -77,7 +98,7 @@ class Chain():
         self.adds = 0
         self.switch = True
         for i in range(self.nrQueues):
-            self.queues.append(Queue(self.sizeState))
+            self.queues.append(Queue(self.sizeState,self.dim))
         # MNIST values    
         self.queues[0].stepsize.append(0.2)
         self.queues[1].stepsize.append(10)
@@ -164,6 +185,7 @@ class Chain():
 class Queues():
     def __init__(self, nrQueues=2, sizeState=30, threshold=0.3, dataset='mnist'):
         self.simenc = SimEnc(dataset)
+        self.dim = 28 if dataset=='mnist' else 32
         # self.encs = deque(maxlen=history)
         # self.encs.append(0)
         self.queues = []        
@@ -173,7 +195,7 @@ class Queues():
         self.adds = 0
         self.lastQueueUsed = [i for i in range(nrQueues)]
         for i in range(nrQueues):
-            self.queues.append(Queue(self.sizeState))
+            self.queues.append(Queue(self.sizeState, self.dim))
         # MNIST values    
         self.queues[0].stepsize.append(0.2)
         self.queues[1].stepsize.append(10)
@@ -234,8 +256,9 @@ class Queues():
         return self.queues[queueNumber].getLastStateRepresentation()
 
 class Queue():
-    def __init__(self, sizeState):
+    def __init__(self, sizeState, dim):
         self.sizeState = sizeState
+        self.dim = dim
         self.sizeQueueMemory = 30
         self.amountOfQueries = 0
         self.encodings = []
@@ -248,12 +271,17 @@ class Queue():
         self.vecs = []
         self.maxstep = 0.1
         self.cos = 0
-        self.fQuery = np.ones((28,28))
         self.encodings.append(np.ones((1,256)))
         self.encodings.append(np.ones((1,256))/2)
         self.cosines.append(0)
-        self.queryMemory.append(np.ones((28,28)))
-        self.queryMemory.append(np.ones((28,28))/2)
+        if self.dim == 28:
+            self.fQuery = np.ones((self.dim,self.dim))
+            self.queryMemory.append(np.ones((self.dim,self.dim)))
+            self.queryMemory.append(np.ones((self.dim,self.dim))/2)
+        else:
+            self.fQuery = np.ones((3,self.dim,self.dim))
+            self.queryMemory.append(np.ones((3,self.dim,self.dim)))
+            self.queryMemory.append(np.ones((3,self.dim,self.dim))/2)
 
     def addQueryToQueue(self, query, logit, similaritySpaceEncoding):
         # self.lastBenignLabel = realLabel
@@ -626,7 +654,7 @@ class Queue():
         state4[0:len(ar4)] = np.round(ar4, 5)
         state5 = np.round(ar5, 5)
         
-        x = torch.empty(size=(25,28,28))
+        x = torch.empty(size=(25,self.dim,self.dim))
         rg = len(self.queryMemory)
         if rg > 24:
             for i in range(25):
@@ -635,12 +663,12 @@ class Queue():
             for i in range(rg):
                 x[i] = torch.from_numpy(query - self.queryMemory[-i])
             for i in range(25-rg):
-                x[i+rg] = torch.from_numpy(query - (np.ones((28,28))/2))
+                x[i+rg] = torch.from_numpy(query - (np.ones((self.dim,self.dim))/2))
             
         return np.asarray(np.concatenate((sum(state1), sum(state2), sum(state3), sum(state4), state5), axis=None)), x
     
     def getStateRepresentation9(self, enc, query, logits):
-        x = torch.empty(size=(25,28,28))
+        x = torch.empty(size=(25,self.dim,self.dim))
         rg = len(self.queryMemory)
         if rg > 24:
             for i in range(25):
@@ -649,7 +677,7 @@ class Queue():
             for i in range(rg):
                 x[i] = torch.from_numpy(query - self.queryMemory[-i])
             for i in range(25-rg):
-                x[i+rg] = torch.from_numpy(query - (np.ones((28,28))/2))
+                x[i+rg] = torch.from_numpy(query - (np.ones((self.dim,self.dim))/2))
             
         return x, x
     

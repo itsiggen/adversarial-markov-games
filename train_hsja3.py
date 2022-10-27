@@ -9,7 +9,7 @@ from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.hsja_skip import HsjaSkip
+from envs.hsja_games import HsjaGames
 from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
@@ -20,6 +20,7 @@ def objective(trial):
     
     adaptive = 1 # adv adaptive, plus stateful defense 
     ratio = 0.5
+    stt = 1 # adversary is learning
     cont = 0
     inter = 1
     defended = True
@@ -86,7 +87,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents)
+        check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves
@@ -157,13 +158,14 @@ def objective(trial):
     
     return mean_eps
 
-def check_full(agents):
+def check_full(agents, stt):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
+        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            agents[i].train()
+            if stt == i or stt == 2:
+                agents[i].train()
             agents[i].reset_buffer()
 
 def reset():

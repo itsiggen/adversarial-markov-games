@@ -8,12 +8,13 @@ from foolbox.tensorboard import TensorBoard
 from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
-from utils.buckets import l2
+from utils.queues import l2
 # import utils.pnoise as pn
 import utils.perlin as pn
 from models.loader import load
 from torchvision import transforms
-from collections import deque
+from collections import deque, OrderedDict
+from models.trainCIFARtorch import resnet20
 import matplotlib.pyplot as plt
 import math
 
@@ -51,8 +52,16 @@ class BagsSkipCIFAR(gym.Env):
         # Observation space
         self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
 
-        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
-        self.dataset, model = load('CIFAR', defended)
+        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- 88.25% acc adversarially trained
+        self.dataset = dataset
+
+        model = resnet20()
+        if defended:
+            model.load_state_dict(torch.load('./models/cifar_resnet_adv.pt', map_location=device)['state_dict'])
+        else:
+            model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device)['state_dict'])
+        model.eval()
+        
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
         self.model = PyTorchModel(model, bounds=(0, 1), device=device)
@@ -85,7 +94,7 @@ class BagsSkipCIFAR(gym.Env):
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
         self.dist = self.gap
-        # print(self.dist)
+        print(self.dist)
         # Distance between successive steps
         self.diff = np.float32(0.0)
         # Moving average of the closing distance
@@ -157,7 +166,7 @@ class BagsSkipCIFAR(gym.Env):
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True
-            # print(self.dist)
+            print(self.dist)
         
         # Scale actions to proper values
         self.action_perlin = self.scale_perlin(action[0])

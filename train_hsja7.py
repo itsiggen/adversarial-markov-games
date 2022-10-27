@@ -18,7 +18,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
 
-# tracemalloc.start()
+from pyinstrument import Profiler
 
 def objective(trial):
     """
@@ -30,6 +30,7 @@ def objective(trial):
     eval_steps = 5000
     adaptive = 3 # both adaptive 
     ratio = 0.5
+    stt = 2 # both agents are learning
     cont = 2 # contrastive model used
     defended = False
     seed = 2
@@ -111,7 +112,7 @@ def objective(trial):
     n_steps = 0
     rst = 1
         
-    for timestep in tqdm(range(total_timesteps), disable=True):
+    for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
         check_full(agents)
         # Store previous move
@@ -200,13 +201,14 @@ def objective(trial):
     
     return mean_eps, mean_acc
     
-def check_full(agents):
+def check_full(agents, stt):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
+        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            agents[i].train()
+            if stt == i or stt == 2:
+                agents[i].train()
             agents[i].reset_buffer()
 
 def reset():
@@ -259,17 +261,20 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--num', default=str("8"), type=str, help="Agents to load")
-    parser.add_argument('--r1', default=int(5), type=bool, help="Int reward used")
-    parser.add_argument('--r2', default=int(1), type=bool, help="Adv reward used")
+    parser.add_argument('--num', default=str("3"), type=str, help="Agents to load")
+    parser.add_argument('--r1', default=int(4), type=bool, help="Int reward used")
+    parser.add_argument('--r2', default=int(5), type=bool, help="Adv reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['minimize', 'maximize'])
         study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
-        
+        # profiler = Profiler()
+        # profiler.start()
+
         mean_eps, mean_acc = test(args.num, args.r1, args.r2)
-        # train(args)
+        
+        # profiler.stop()
+        # profiler.print()

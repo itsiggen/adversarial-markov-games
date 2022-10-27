@@ -10,7 +10,7 @@ from tests.cifar_bags_opt import objective_cbags
 from tests.cifar_hsja_opt import objective_chsja
 
 study = optuna.create_study()  # Create a new study.
-study.optimize(objective_hsja, n_trials=1, gc_after_trial=True)  # Invoke optimization of the objective function.
+study.optimize(objective_cbags, n_trials=1, gc_after_trial=True)  # Invoke optimization of the objective function.
 # study.optimize(objective_hsja, n_trials=100) 
 
 

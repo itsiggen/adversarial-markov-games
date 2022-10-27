@@ -4,6 +4,7 @@ data/contrasts.pt
 data/labels.pt
 logs/
 res/
+mains/
 tests/
 test.py
 test_envgames.py

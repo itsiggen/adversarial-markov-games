@@ -7,10 +7,6 @@ from torchvision import datasets, transforms
 from stable_baselines3 import PPO
 from utils.evaluation import evaluate_policy
 import os
-# from envs.boundary_skip import BoundarySkip
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-
-# Objective function to be minimized.
 
 transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)

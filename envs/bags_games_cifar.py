@@ -5,17 +5,15 @@ import torch
 import random
 from foolbox import PyTorchModel
 from foolbox.tensorboard import TensorBoard
-# from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
+from torchvision import transforms
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.queues import Queues, l2
+from utils.queues import Chain, l2
 import utils.perlin as pn
-from models.loader import load
-from torchvision import transforms
 from utils.utils import get_is_adversarial
+from models.trainCIFARtorch import resnet20
 from collections import deque
-import matplotlib.pyplot as plt
 import math
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -25,19 +23,19 @@ np.seterr(invalid='raise')
 class BagsGamesCIFAR(gym.Env):
     def __init__(
         self,
-        steps: int = 1000,
+        steps: int = 5000,
         spherical_step: float = 1e-2,
         source_step: float = 1e-2,
         defended = False,
         adaptive: int = 0,
         ratio_benign = 0.5,
         train = True,
-        rewarder = 1,
-        scale = 5,
+        rint = 1,
+        radv = 1,
+        scale = 20, #default is 20
         dataset = None,
         intercept = 1,
         device = 'cpu',
-        tensorboard = False,
         ):
         super(BagsGamesCIFAR, self).__init__()  
 
@@ -46,44 +44,63 @@ class BagsGamesCIFAR(gym.Env):
         self.spherical_step = spherical_step
         self.source_step = source_step
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
-        self.rewarder = rewarder
+        self.ratio_benign = ratio_benign
+        self.train = train
+        self.rint = rint
+        self.radv = radv
         self.intercept = intercept
         self.scale = scale
-        self.tensorboard = tensorboard
+        self.chain = Chain(nrQueues=3, dataset='cifar')
+        
+        # random state for benign query generation
+        self.rn = np.random.RandomState(1337)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
-            'interceptor': spaces.Box(low=0, high=1, shape=(300,), dtype=np.float32)
+            'adversary': spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32),
+            'interceptor': spaces.Box(low=-1, high=1, shape=(77,), dtype=np.float32)
             })
 
-        # Action space
+        # Actions space
         self.action_spaces = spaces.Dict({
             'adversary': spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
-        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- % acc adversarially trained
-        self.dataset, model = load('CIFAR', defended)
+        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- 88.25% acc adversarially trained
+        self.dataset = dataset
+
+        # state_dict = dct['state_dict']
+        # new_state_dict = OrderedDict()
+        # for k, v in state_dict.items():
+        #     name = k[7:] # remove `module.`
+        #     new_state_dict[name] = v
+            
+        model = resnet20()
+        if defended:
+            model.load_state_dict(torch.load('./models/cifar_resnet_adv.pt', map_location=device)['state_dict'])
+        else:
+            model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device)['state_dict'])
+        model.eval()
+        
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
-
         self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
-        self.dim = 28
+        self.dim = 32
+        self.channels = 3
         self.resets = 0
-        self.intercept = intercept
-    
         self.done = False
 
     def scale_perlin(self, v):
-        return ((v + 2) / 4) * (self.dim - 2) + 1
+        act = ((v + 2) / 4) * (self.dim - 3) + 1
+        return np.nan_to_num(act, nan=0.0, posinf=self.dim-1, neginf=0.0)
 
     def scale_mask(self, v):
         return (v + 2) / 2
 
     def scale_step(self, v):
-        return (v + 2) / 20
+        return (v + 2) / self.scale
     
     def scale_intercept(self, v):
         return ((v + 2) / 4) * self.intercept
@@ -93,11 +110,10 @@ class BagsGamesCIFAR(gym.Env):
         """
         self.iter = 0           # num of attack queries
         self.queries = 0        # num of benign queries
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # if self.resets < 3: print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
@@ -117,8 +133,8 @@ class BagsGamesCIFAR(gym.Env):
         # Moving average of the step
         self.step_moving = 0.1
         self.gain_moving = 0.1
-        # Initialize query queues
-        self.queues = Queues(nrQueues=2, dataset='cifar')
+        # Reset queues
+        self.chain.reset()
         # Target epsilon
         self.epsilon = 1
         self.correct = []
@@ -127,6 +143,7 @@ class BagsGamesCIFAR(gym.Env):
         # Set current and next player
         self.curr = 1
         self.next = 0
+        self.index = 0
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -135,7 +152,9 @@ class BagsGamesCIFAR(gym.Env):
         else:
             self.best_advs = self.starting_point
 
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.best_advs).unsqueeze(0).unsqueeze(1)))
+        cand = self.normalize(torch.tensor(self.best_advs))
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
+        # self.is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.best_advs).unsqueeze(0).unsqueeze(1)))
         self.is_adv = self.is_adv.raw.numpy()[0]
         if not self.is_adv:
             raise ValueError("starting_point is not adversarial")
@@ -147,7 +166,7 @@ class BagsGamesCIFAR(gym.Env):
     
         # create queues to track various statistic used to derive the state
         # success rate, step size, relative location, progress in episode
-        self.stats_is_adv = deque(maxlen=30)
+        self.stats_is_adv = deque(maxlen=300)
         self.dist_derivative = deque(maxlen=30)
         self.improve_time_avg = deque(maxlen=30)
         self.moving_avg_step_dist = deque(maxlen=30)
@@ -156,16 +175,8 @@ class BagsGamesCIFAR(gym.Env):
         self.candidate = self.best_advs
     
         # Return observation for interceptor as it's the first agent to move
-        obs, ix, self.lastStep, self.alt = self.observation_int(self.logits, self.best_advs)
-        
-        # observation = []
-        # observation.append(np.float32(0.0))
-        # observation.append(np.float32(1.0))
-        # observation.append(slope)
-        # observation.append(self.improve_avg)
-        # observation.append(self.gain_moving)
-        # observation.extend(pos)
-        # observation = np.append(observation, np.ones(30))
+        # obs, ix, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, self.best_advs)
+        obs, self.span = self.obs_int(self.logits, self.best_advs)
 
         return obs
 
@@ -178,28 +189,33 @@ class BagsGamesCIFAR(gym.Env):
         if self.curr == 1 or self.curr == 2:
             # Int responds to adv or ben
             self.past = self.curr
-            obs, r, done, info = self.step_int(action)
+            obs, r, done = self.step_int(action)
             self.roll_next()
-            return obs, r, done, info, self.curr, self.next
+            info = self.get_info()
+            # return obs, r, done, info, self.curr, self.next
+            return obs, r, done, info
         elif self.curr == 0:
             if self.next == 1:
                 # Adv follows int
-                obs, r, done, info = self.step_adv(action)
+                obs, r, done = self.step_adv(action)
             elif self.next == 2:
                 # Ben follows int
-                obs, r, done, info = self.step_ben(action)
+                obs, r, done = self.step_ben(action)
             self.next = 0
-            return obs, r, done, info, self.curr, self.next
+            info = self.get_info()
+            return obs, r, done, info
             
     def step_int(self, action):
         # Scale intercept
         action = self.scale_intercept(action)
         if self.curr == 1:
             # Candidate remains adversarial only if outside the containment area
-            # print(self.lastStep, action)
-            candid = self.switch(self.lastStep, action)
+            # print(action, self.lastStep, self.index)
+            # candid = self.switch(self.lastStep, self.maxStep, action)
+            candid, _ = self.swap(self.span, action)
             # print(self.is_adv, candid)
             self.is_adv = np.logical_and(self.is_adv, candid)
+            self.rew_adv = self.is_adv
           
             self.stats_is_adv.append(self.is_adv)
             
@@ -214,12 +230,20 @@ class BagsGamesCIFAR(gym.Env):
                 # self.gain = l2(self.candidate, self.best_advs)
                 self.gain = self.source_norm - self.distance
                 self.best_advs = self.candidate
-                self.dist = l2(self.best_advs, self.wanted_point)
+                # self.dist = l2(self.best_advs, self.wanted_point)
+                self.dist = self.distance
                 self.gain_moving = self.gain_moving * 0.8 + (self.gain * 0.2) / self.gap
                 self.improve_avg = self.improve_avg * 0.8 + (1/(self.improve_last +1))*0.2
                 self.reward_mult = self.improve_last
                 self.improve_last = 0
                 self.na_batch = 1
+                # print(self.dist, self.iter)
+                
+                self.unnormalized_source_direction = self.wanted_point - self.best_advs
+                # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+                self.source_norm = self.distance
+                self.source_direction = self.unnormalized_source_direction / self.source_norm
+                
             else:
                 self.reward_mult = 1
                 self.improve_last += 1
@@ -229,48 +253,65 @@ class BagsGamesCIFAR(gym.Env):
                     self.na_batch = 1
                 self.gain = np.float32(0)
             
-            self.unnormalized_source_direction = self.wanted_point - self.best_advs
-            self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
-            self.source_direction = self.unnormalized_source_direction / self.source_norm
+            # # TODO: potentially reward shorter episodes
+            # is_within_eps = self.dist < self.epsilon # check if perturbation < eps    
+            # if is_best_adv and is_within_eps:
+            #     self.done = True
+            #     self.success = True
+            #     # print('success')
+            
+            # self.unnormalized_source_direction = self.wanted_point - self.best_advs
+            # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
+            # self.source_direction = self.unnormalized_source_direction / self.source_norm
             # update tensorboard
             # self.update_tb(is_best_adv, cond
     
             # store obs so it can be returned from benign
-            self.obs = self.observation_adv()
+            self.obs = self.obs_adv()
 
-            r = self.reward_adv(self.rewarder)
-            info = self.get_info()
-            # Set state to interceptor
-            self.curr = 0
-            return self.obs, r, self.done, info
+            r = self.reward_adv(self.radv)
+            # info = self.get_info()
+            # return self.obs, r, self.done
         
         elif self.curr == 2:
             # Classify benign input
-            if self.switch(self.lastStep, action):
-                # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
+            # print(action, self.lastStep)
+            # if self.switch(self.lastStep, self.maxStep, action):
+            #     # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
+            #     ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
+            # else:
+            #     ans = self.alt
+            candid, alt = self.swap(self.span, action)
+            if candid:
                 ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
             else:
-                ans = self.alt
+                ans = alt
+            
             # Check if benign is labeled correctly
-            # print(ans, self.label)
+            # print(self.label, ans)
             self.check_bn = self.label==ans
             # print(self.check_bn)
             self.correct.append(self.check_bn)
+            # print(np.mean(self.correct))
             
             # Random agent gonna random
             # obs, info = {}
-            # Set state to interceptor
-            self.curr = 0
-            return self.obs, None, self.done, {}
+            r = 0
+        
+        self.act = action
+        self.rad = min(self.span)
+        # Set state to interceptor 
+        self.curr = 0
+        return self.obs, r, self.done
                  
     def step_adv(self, action):
         self.iter += 1
         # Remove nan and inf from actions
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         
-        self.converged = self.dist < self.epsilon
-        if self.converged or self.iter >= self.steps:
-            self.tb.close()
+        # self.converged = self.dist < self.epsilon
+        # if self.converged or self.iter >= self.steps:
+        if self.iter >= self.steps:
             self.done = True
         
         # Scale actions to proper values
@@ -296,72 +337,66 @@ class BagsGamesCIFAR(gym.Env):
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
                                                      self.action_spherical, self.action_perlin)
         # print(type(self.candidate), type(self.best_advs), type(self.wanted_point))
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.candidate).unsqueeze(0).unsqueeze(1)))
+        cand = self.normalize(torch.tensor(self.candidate))
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
         self.is_adv = self.is_adv.raw.numpy()[0]
         
         # Normal attack flow is interrupted here, generate obs for interceptor
-        # wher the final decision on is_adv is made
+        # where the final decision on is_adv is made
             
-        obs, index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index), self.candidate, self.rewarder)
-        info = self.get_info()
+        # obs, self.index, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, self.candidate)
+        obs, self.span = self.obs_int(self.logits, self.candidate)
+        # if self.index == 1: print(self.index, self.resets)
+        # r = self.reward_int(self.queues.getStepSizeQueue(self.index), self.candidate, self.rint)
+        r = self.reward_int(self.chain.getStepSizeQueue(0), self.candidate, self.rint)
+        # info = self.get_info()
         # Set state to adversary
         self.curr = 1
-        return obs, r, self.done, info
+        return obs, r, self.done
         
     def step_ben(self, action):
         self.queries += 1
         candidate, self.label = self.get_benign(action)
-        self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1))
-        obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
-        r = self.reward_int(self.queues.getStepSizeQueue(index), candidate, self.rewarder)
-        info = self.get_info()
+        self.logits = self.model(self.normalize(torch.tensor(candidate)).unsqueeze(0))
+        # obs, self.index, self.lastStep, self.maxStep, self.alt = self.observation_int(self.logits, candidate)
+        obs, self.span = self.obs_int(self.logits, candidate)
+        # r = self.reward_int(self.queues.getStepSizeQueue(self.index), candidate, self.rint)
+        r = self.reward_int(self.chain.getStepSizeQueue(0), candidate, self.rint)
+        # info = self.get_info()
         # Set state to benign
         self.curr = 2
-        return obs, r, self.done, info
-
-    def observation_int(self, logits, query):
+        return obs, r, self.done
+    
+    def obs_int(self, logits, query):
         # Intercept the last query, adversarial or benign
         probs = torch.nn.functional.softmax(logits, dim=1)
-        # print(type(query))
-        index = self.queues.addQuery(torch.tensor(query).unsqueeze(0).unsqueeze(3), probs)
-        # print(self.next, index+1)
-        obs = self.queues.getState(index)
-        # print(self.benign)
-        # print(bucketIndex)
-        lastStep = self.queues.getLastStepQueue(index)
+        span = self.chain.checkQuery(query, probs)
+        # TODO: try different states
+        obs = self.chain.retState()
+        obs = np.round(obs,2)
+        self.obs_int_state = obs
+        # origin = self.chain.getOriginQueue(1)
         # print(lastStep)
-        origin = self.queues.getOriginQueue(index)
-
-        return obs, index, lastStep, origin
+        return obs, span
     
-    def observation_adv(self):
-        # History of success/fail, goal and/or distance to goal, (history of step sizes)
-        
+    def obs_adv(self):
+      
         # Use dist in place of moving dist
         self.dist_moving = self.dist_moving * 0.8 + (self.dist / self.gap) * 0.2
         loc = self.dist / self.gap
         slope = self.dist_moving - loc
         
         observation = []
-        # hist = np.asarray(self.stats_is_adv, dtype=int)
-        # if len(hist) < 30:
-        #     hist = np.ones(30)
-        # print(np.asarray(self.stats_is_adv, dtype=int))
         
-        # pos = self.best_advs[::4,::4].flatten().tolist()
-        
+        observation.append(self.iter/5000)
         observation.append(np.mean(self.stats_is_adv))
+        observation.append(self.gap/15)
+        observation.append(self.dist/15)
         observation.append(loc)
         observation.append(slope)
         observation.append(self.improve_avg)
         observation.append(self.gain_moving)
-        # observation.extend(pos)
-        # observation = np.append(observation, hist)
-        # observation.append(self.gain)
-        # observation.append(self.iter / self.steps)
-        # print(observation)
-        
+
         # Remove nan and inf from observation
         observation = np.nan_to_num(observation, nan=0.0, posinf=1, neginf=0)
         
@@ -371,10 +406,6 @@ class BagsGamesCIFAR(gym.Env):
         # Adapted from FoolBox BoundaryAttack.
             
         mask = mask ** self.action_mask
-        # rnd_normal = pn.create_perlin_noise(self.dim, color=False, freq=self.action_perlin, normalize=False).squeeze(0)
-        # rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
-        # rnd_normal /= np.linalg.norm(rnd_normal)
-        # sampling_dir = rnd_normal
         sampling_dir = np.squeeze(pn.create_perlin_noise(self.dim, freq=perlin_freq))
 
         # calculate candidate on sphere
@@ -403,7 +434,6 @@ class BagsGamesCIFAR(gym.Env):
 
         np.clip(candidate, 0., 1., out=candidate)
         return np.float32(candidate)
-
     def reward_int(self, stepsize, cand, reward_nr):
         averageStepsize = np.mean(np.asarray(stepsize))
         #print(averageStepsize)
@@ -419,16 +449,17 @@ class BagsGamesCIFAR(gym.Env):
                 # Reward keeping average dist of queries close to starting point
                 r = 1 / (l2(self.starting_point, cand) / self.gap)
             elif reward_nr == 4:
-                # reward big steps
-                r = 10*averageStepsize
-            # r = abs(math.log(abs(averageStepsize/self.step_ref - 1)),10)
-            # r = abs(math.log(np.linalg.norm(diff), 10))
-
+                r = -1 if self.rew_adv else 1
+            elif reward_nr == 5:
+                # reward based on the gap between intercept and smallest span
+                r = self.act - min(self.intercept, self.rad)
+                
         elif self.past == 2:
             # print(self.check_bn)
-            r = 0.5 if self.check_bn else - 0.5
+            r = 1 if self.check_bn else -1
+            # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
             
-        return r
+        return np.reshape(r, (1,))
 
     def reward1(self):
         if self.gain > 0:
@@ -477,41 +508,52 @@ class BagsGamesCIFAR(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
-        return reward
+        # self.tb.scalar("reward", torch.tensor([reward]), self.iter)
+        # print("rew", reward_nr, reward)
+
+        return np.reshape(reward, (1,))
     
     def roll_next(self):
         # decide next query; benign with P = ratio_benign
-        if random.random() < self.ratio_benign and self.iter > 12:
+        if np.random.random() < self.ratio_benign and self.iter > 5:
             self.next = 2
         else:
             self.next = 1
-            
-    def switch(self, step, action):
-        # Return False if candidate lies within the action radius, otherwise True
-        # a = torch.tensor(action)
-        # b = torch.tensor(step)
-        # c = ep.astensor(a < b)
-        # If non-adaptive, return actual model decision
-        if self.adaptive == 0 or self.adaptive == 1:
-            return True
-        # if self.curr == 1 and step > 1:
-        #     print(step, action, self.iter)
+
+    def swap(self, span, action):
+        # if self.curr == 1:
+        #     print('ADV:', span)
         # if self.curr == 2:
-        #     print(step, action, "BENIGN")
-        return action[0] < step
+        #     print('BEN:', span)
+        if action.shape == 1:
+            action = action[0]
+        if self.adaptive == 0:
+            inn = min(span) > 0.01*self.intercept
+        elif self.adaptive == 1:
+            inn = True
+        else:
+            inn = min(span) > action
+        # alt = self.chain.addQuery(inn)
+        if self.train:
+            if self.curr == 2:
+                alt = self.chain.addQuery(True)
+            else:
+                alt = self.chain.addQuery(False)
+        else:
+            alt = self.chain.addQuery(inn)
+        return inn, alt
 
     def get_pair(self):
         startImgNr = random.randint(*self.indices)
         originImgNr = random.randint(*self.indices)
         
         # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.dataset[originImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[originImgNr][1]:
+        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
             originImgNr = random.randint(*self.indices)
         
         # Make sure starting and original images do not belong to the same class, and starting is correctly classified
         while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.dataset[startImgNr][0].unsqueeze(1))).detach().numpy() == self.dataset[startImgNr][1]:
+            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
             startImgNr = random.randint(*self.indices)
         
         startImg = self.dataset[startImgNr][0].to(device)
@@ -519,21 +561,16 @@ class BagsGamesCIFAR(gym.Env):
         
         originImg = self.dataset[originImgNr][0].to(device)
         originLabel = self.dataset[originImgNr][1]
-        
-        # startImg = self.dataset[1][0]
-        # startLabel = self.dataset[1][1]
-        # originImg = self.dataset[3][0]
-        # originLabel = self.dataset[3][1]
                     
         return startImg.squeeze(0).numpy(), startLabel, originImg.squeeze(0).numpy(), originLabel
     
     def get_benign(self, action):
-        nr = random.randint(*self.indices)
+        nr = self.rn.randint(*self.indices)
         
-        mu, sigma = 0, action # mean and standard deviation
-        s = np.random.normal(mu, sigma, 28*28)
+        mu, sigma = 0, 0.1 # mean and standard deviation
+        s = np.random.normal(mu, sigma, 3*self.dim*self.dim)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
-        s = s.reshape(28,28).astype('float32')
+        s = s.reshape(3,self.dim,self.dim).astype('float32')
         # print(s.shape)
         # print(self.dataset[nr][0].shape)
         s = np.add(self.dataset[nr][0].squeeze(0).numpy(), s)
@@ -548,5 +585,7 @@ class BagsGamesCIFAR(gym.Env):
                 "benigns" : self.queries,
                 "epsilon" : self.dist,
                 "correct" : correct,
-                "success" : self.success}
+                "curr" : self.curr,
+                "next" : self.next,
+                "gap" : self.gap}
         return info

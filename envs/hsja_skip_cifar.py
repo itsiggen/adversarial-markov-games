@@ -11,7 +11,7 @@ from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import l2
 import utils.perlin as pn
-from models.loader import load
+from models.trainCIFARtorch import resnet20
 from torchvision import transforms
 from typing import List
 import math
@@ -57,8 +57,22 @@ class HsjaSkipCIFAR(gym.Env):
         # Observation space
         self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
 
-        # Load CIFAR pytorch Resnet20 model -- 91.25% acc -- % acc adversarially trained
-        self.dataset, model = load('CIFAR', defended)
+        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- 88.25% acc adversarially trained
+        self.dataset = dataset
+
+        # state_dict = dct['state_dict']
+        # new_state_dict = OrderedDict()
+        # for k, v in state_dict.items():
+        #     name = k[7:] # remove `module.`
+        #     new_state_dict[name] = v
+            
+        model = resnet20()
+        if defended:
+            model.load_state_dict(torch.load('./models/cifar_resnet_adv.pt', map_location=device)['state_dict'])
+        else:
+            model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device)['state_dict'])
+        model.eval()
+        
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
         self.model = PyTorchModel(model, bounds=(0, 1), device=device)

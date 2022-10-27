@@ -14,17 +14,14 @@ epochs = 10
 
 # train_dataset = MNIST('../data/MNIST', train=True, download=True,
 
-transform = transforms.Compose([transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                      std=[0.229, 0.224, 0.225])])
+transform=transforms.ToTensor()
+train_dataset = datasets.MNIST('../data', train=True, transform=transform, download=True)
+test_dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
 
-train_dataset = datasets.CIFAR10('../data', train=True, transform=transform, download=True)
-test_dataset = datasets.CIFAR10('../data', train=False, transform=transform, download=True)
-
-class cifarNet(nn.Module):
+class mnistNet(nn.Module):
     def __init__(self):
-        super(cifarNet, self).__init__()
-        self.conv1 = nn.Sequential(nn.Conv2d(3, 32, 3, padding='same'), nn.PReLU(),
+        super(mnistNet, self).__init__()
+        self.conv1 = nn.Sequential(nn.Conv2d(1, 32, 3, padding='same'), nn.PReLU(),
                                   nn.Conv2d(32, 32, 3, padding='same'), nn.PReLU(),
                                   nn.MaxPool2d(2, stride=2))
         
@@ -32,22 +29,21 @@ class cifarNet(nn.Module):
                                   nn.Conv2d(64, 64, 3, padding='same'), nn.PReLU(),
                                   nn.MaxPool2d(2, stride=2))
 
-        self.fc = nn.Sequential(nn.Linear(64 * 8 * 8, 512),
+        self.fc = nn.Sequential(nn.Linear(64 * 7 * 7, 512),
                                 nn.PReLU(),
                                 nn.Linear(512, 256),
-                                nn.PReLU(),
-                                nn.Linear(256, 256)
+                                # nn.PReLU(),
+                                # nn.Linear(256, 256)
                                 )
         
         self.dropout = nn.Dropout(0.25)
 
     def forward(self, x):
-        # print(x.shape)
         x = self.conv1(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         x = self.conv2(x)
+        x = self.dropout(x)
         # print(x.shape)
-        # x = self.dropout(x)
         x = x.view(x.size()[0],-1)
         x = self.fc(x)
         return x
@@ -204,32 +200,30 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
 
     return val_loss, metrics
 
-class SiameseCIFAR(Dataset):
+class SiameseMNIST(Dataset):
     """
     Train: For each sample creates randomly a positive or a negative pair
     Test: Creates fixed pairs for testing
     """
 
-    def __init__(self, dataset, mu=0, std=0.3):
-        self.cifar_dataset = dataset
-        self.train = self.cifar_dataset.train
-        # print(self.train)
+    def __init__(self, mnist_dataset, mu=0, std=0.3):
+        self.mnist_dataset = mnist_dataset
+        self.train = self.mnist_dataset.train
         self.mu = mu
         self.std = std
 
         if self.train:
-            self.train_labels = self.cifar_dataset.targets
-            self.train_data = self.cifar_dataset.data
-            self.labels_set = set(self.train_labels)
-            self.label_to_indices = {label: np.where(np.asarray(self.train_labels) == label)[0]
+            self.train_labels = self.mnist_dataset.train_labels
+            self.train_data = self.mnist_dataset.train_data/255
+            self.labels_set = set(self.train_labels.numpy())
+            self.label_to_indices = {label: np.where(self.train_labels.numpy() == label)[0]
                                      for label in self.labels_set}
         else:
             # generate fixed pairs for testing
-            self.test_labels = self.cifar_dataset.targets
-            # print(self.test_labels)
-            self.test_data = self.cifar_dataset.data
-            self.labels_set = set(self.test_labels)
-            self.label_to_indices = {label: np.where(np.asarray(self.test_labels) == label)[0]
+            self.test_labels = self.mnist_dataset.test_labels
+            self.test_data = self.mnist_dataset.test_data/255
+            self.labels_set = set(self.test_labels.numpy())
+            self.label_to_indices = {label: np.where(self.test_labels.numpy() == label)[0]
                                      for label in self.labels_set}
 
             random_state = np.random.RandomState(26)
@@ -240,7 +234,7 @@ class SiameseCIFAR(Dataset):
             negative_pairs = [[i,
                                random_state.choice(self.label_to_indices[
                                                        np.random.choice(
-                                                           list(self.labels_set - set([self.test_labels[i]]))
+                                                           list(self.labels_set - set([self.test_labels[i].item()]))
                                                        )
                                                    ]),
                                0]
@@ -250,43 +244,51 @@ class SiameseCIFAR(Dataset):
     def __getitem__(self, index):
         if self.train:
             target = np.random.randint(0, 2)
-            img1, label1 = self.train_data[index], self.train_labels[index]
-            img1 = transform(img1)
+            img1, label1 = self.train_data[index], self.train_labels[index].item()
             if target == 1:
                 img2 = img1 + torch.randn(img1.size()) * self.std + self.mu
                 img2 = torch.clamp(img2, 0, 1)
+                # ratio = np.random.uniform(0.5,1)
+                # siamese_label = np.random.choice(list(self.labels_set - set([label1])))
+                # siamese_index = np.random.choice(self.label_to_indices[siamese_label])
+                # img2 = self.train_data[siamese_index]
+                # img2 = ratio * img1 + (1 - ratio) * img2
+                # img2 = torch.clamp(img2, 0, 1)  
+                # TO-DO: add both random and biased noise
             else:
                 siamese_label = np.random.choice(list(self.labels_set - set([label1])))
                 siamese_index = np.random.choice(self.label_to_indices[siamese_label])
                 img2 = self.train_data[siamese_index]
-                img2 = transform(img2)
+                # TO-DO: maybe add some gaussian noise on counter examples
         else:
             target = self.test_pairs[index][2]
             img1 = self.test_data[self.test_pairs[index][0]]
-            img1 = transform(img1)
-            if target == 0:
-                img2 = self.test_data[self.test_pairs[index][1]]
-                img2 = transform(img2)
-            else:
+            if target == 1:
                 img2 = img1 + torch.randn(img1.size()) * self.std + self.mu
                 img2 = torch.clamp(img2, 0, 1)
-                    
-        return (img1, img2), target
+                # ratio = np.random.uniform(0.5,1)
+                # img2 = self.test_data[self.test_pairs[index][1]]
+                # img2 = ratio * img1 + (1 - ratio) * img2
+                # img2 = torch.clamp(img2, 0, 1)  
+            else:
+                img2 = self.test_data[self.test_pairs[index][1]]
+                
+        return (img1.unsqueeze(0), img2.unsqueeze(0)), target
 
     def __len__(self):
-        return len(self.cifar_dataset)
+        return len(self.mnist_dataset)
     
 if __name__ == "__main__":
     
-    siamese_train_dataset = SiameseCIFAR(train_dataset)
-    siamese_test_dataset = SiameseCIFAR(test_dataset)
+    siamese_train_dataset = SiameseMNIST(train_dataset)
+    siamese_test_dataset = SiameseMNIST(test_dataset)
     batch_size = 256
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
     siamese_train_loader = torch.utils.data.DataLoader(siamese_train_dataset, batch_size=batch_size, shuffle=True, **kwargs)
     siamese_test_loader = torch.utils.data.DataLoader(siamese_test_dataset, batch_size=batch_size, shuffle=False, **kwargs)
        
     margin = 1.
-    embedding_net = cifarNet()
+    embedding_net = mnistNet()
     model = SiameseNet(embedding_net)
     if cuda:
         model.cuda()
@@ -299,5 +301,5 @@ if __name__ == "__main__":
     
     # Train and save the model
     fit(siamese_train_loader, siamese_test_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval)
-    torch.save(model.state_dict(), "CIFARsiamese.pt")
-    torch.save(embedding_net.state_dict(), "CIFARembedding.pt")
+    torch.save(model.state_dict(), "MNISTsiamese.pt")
+    torch.save(embedding_net.state_dict(), "MNISTembedding.pt")

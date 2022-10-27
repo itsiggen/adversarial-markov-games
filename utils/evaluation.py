@@ -252,8 +252,6 @@ def evaluate_rtpolicy(
         assert env.num_envs == 1, "You must pass only one environment when using this function"
 
     episode_rewards, lengths, iterations, epsilons, start, acc = [], [], [], [], [], []
-    
-    agents = [interceptor, adversary, benign]
 
     for i in tqdm(range(n_eval_episodes), disable=False):
         # Avoid double reset, as VecEnv are reset automatically
@@ -279,23 +277,7 @@ def evaluate_rtpolicy(
             obs, reward, done, _info = env.step(action)
             curr = _info["curr"]
             nxt = _info["next"]
-            # print(curr, nxt)
-            # if curr == 0:
-            #     if nxt == 0:
-            #         pass
-                    
-            #     elif nxt == 1:
-            #         if rst == 1:
-            #             agents[1].set_last(obs, False)
-            #             rst = 0
-            #         else:
-            #             agent_rewards[1] += reward
-            # elif curr == 1 or curr == 2:
-            #     agent_rewards[0] += reward
-            #     # if reward != 0.2 and reward != 0: print("rew:", reward, _info['iterations'], _info['epsilon'], env.imp)
-            #     # print("rew:", reward, _info['iterations'], _info['epsilon'], env.imp) 
-                
-            # agent_steps[curr] += 1
+
             if curr == 0 and prev == 1:
                 epsilon.append(_info['epsilon'])
                 iters.append(_info['iterations'])
