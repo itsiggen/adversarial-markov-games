@@ -114,7 +114,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents)
+        check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves

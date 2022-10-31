@@ -8,7 +8,7 @@ from foolbox.tensorboard import TensorBoard
 from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
-from utils.queues import l2
+from utils.buckets import l2
 # import utils.pnoise as pn
 import utils.perlin as pn
 from models.loader import load
@@ -54,19 +54,30 @@ class BagsSkipCIFAR(gym.Env):
 
         # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- 88.25% acc adversarially trained
         self.dataset = dataset
-
-        # state_dict = dct['state_dict']
-        # new_state_dict = OrderedDict()
-        # for k, v in state_dict.items():
-        #     name = k[7:] # remove `module.`
-        #     new_state_dict[name] = v
-            
-        model = resnet20()
         if defended:
-            model.load_state_dict(torch.load('./models/cifar_resnet_adv.pt', map_location=device)['state_dict'])
+            dct = torch.load('./models/cifar_resnet_adv.pt', map_location=device)
         else:
-            model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device)['state_dict'])
+            dct = torch.load('./models/cifar_resnet.pt', map_location=device)
+        state_dict = dct['state_dict']
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        model = resnet20()
+        model.load_state_dict(new_state_dict)
         model.eval()
+        # model = resnet20()
+        # if defended:
+        #     model.load_state_dict(torch.load('./models/cifar_resnet_adv.pt', map_location=device))
+        # else:
+        #     model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device))
+        # # state_dict = dct['state_dict']
+        # # new_state_dict = OrderedDict()
+        # # for k, v in state_dict.items():
+        #     # name = k[7:] # remove `module.`
+        #     # new_state_dict[name] = v
+        # # model.load_state_dict(new_state_dict)
+        # model.eval()
         
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
@@ -100,7 +111,6 @@ class BagsSkipCIFAR(gym.Env):
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
         self.dist = self.gap
-        print(self.dist)
         # print(self.dist)
         # Distance between successive steps
         self.diff = np.float32(0.0)
@@ -173,7 +183,7 @@ class BagsSkipCIFAR(gym.Env):
         if self.iter >= self.steps:
             self.tb.close()
             self.done = True
-            print(self.dist)
+            # print(self.dist)
         
         # Scale actions to proper values
         self.action_perlin = self.scale_perlin(action[0])

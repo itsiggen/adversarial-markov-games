@@ -4,16 +4,15 @@ import gym
 import torch
 import random
 from foolbox import PyTorchModel
-from foolbox.tensorboard import TensorBoard
-# from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import Chain, l2, Contrasts
 from utils.utils import get_is_adversarial
-from data.contrastive import EmbeddingNet, TripletNet
+from data.contrastive import EmbeddingNet
 from typing import List
 from models.trainCIFARtorch import resnet20
+from torchvision import transforms
 import gc
 import math
 
@@ -56,8 +55,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.radv = radv
         self.scale = scale
         self.intercept = intercept
-        self.tensorboard = tensorboard
-        self.chain = Chain(nrQueues=3, dataset='mnist')
+        self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
         
         # random state for benign query generation
@@ -84,6 +82,8 @@ class HsjaGamesCIFAR(gym.Env):
         else:
             model.load_state_dict(torch.load('./models/cifar_resnet.pt', map_location=device)['state_dict'])
         model.eval()
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
             
         # Load contrastive models for state
         self.contrast_model = EmbeddingNet()
@@ -101,9 +101,11 @@ class HsjaGamesCIFAR(gym.Env):
             pass
         self.contrast_model.eval()
 
-        self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
+
+        self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
-        self.dim = 28
+        self.dim = 32
+        self.channels = 3
         self.resets = 0
     
     def scale_delta(self, v):
@@ -132,7 +134,6 @@ class HsjaGamesCIFAR(gym.Env):
         self.reps = 0           # num of attack reps
         self.queries = 0        # num of benign queries
         self.repdone = 0
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         self.startLabel = startLabel
         self.originLabel = originLabel
@@ -181,7 +182,9 @@ class HsjaGamesCIFAR(gym.Env):
         else:
             self.best_advs = self.starting_point
 
-        is_adv = self.is_adversarial(ep.astensor(self.best_advs).raw.unsqueeze(1).to(device))
+        cand = self.normalize(self.best_advs)
+        is_adv  = self.is_adversarial(cand.unsqueeze(0))
+        # is_adv = self.is_adversarial(ep.astensor(cand).raw.unsqueeze(1).to(device))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
             
@@ -334,7 +337,6 @@ class HsjaGamesCIFAR(gym.Env):
     def step_adv(self, action):
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         if self.iter >= self.steps:
-            self.tb.close()
             self.done = True
         self.repdone = 0
         self.phase = 0
@@ -393,7 +395,7 @@ class HsjaGamesCIFAR(gym.Env):
     def step_ben(self, action):
         self.queries += 1
         candidate, self.label = self.get_benign(action)
-        self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1).to(device))
+        self.logits = self.model(torch.tensor(candidate).unsqueeze(0).to(device))
         self.logits = self.logits.cpu()
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
         obs, self.span = self.obs_int(self.logits, candidate, 0)
@@ -438,10 +440,11 @@ class HsjaGamesCIFAR(gym.Env):
         if self.adaptive == 2 or self.adaptive == 3:
             obs, cont = self.chain.getState(2)
             # Add to contrastive dataset
-            # self.contrasts.add(cont, label)
+            self.contrasts.add(cont, label)
             # print(cont.shape)
-            with torch.no_grad():
-                obs = self.contrast_model(torch.unsqueeze(cont, dim=0)).detach().numpy()
+            # with torch.no_grad():
+            #     obs = self.contrast_model(cont).detach().numpy()
+            obs = np.zeros(shape=(64,))
         else:
             obs = np.zeros(shape=(64,))
         # print(max(max(obs)))
@@ -495,8 +498,8 @@ class HsjaGamesCIFAR(gym.Env):
    
     def binary_reset(self, best_advs, dist):
         self.bsteps = 0
-        # print(len(best_advs))
-        self.highs = ep.ones(best_advs, len(best_advs))
+        # print(len(best_advs), best_advs.raw.size())
+        self.highs = ep.ones(best_advs, 1)
         self.lows = ep.zeros_like(self.highs)
         self.threshold = 1 / self.dim ** 3
         self.badvs = best_advs
@@ -507,12 +510,15 @@ class HsjaGamesCIFAR(gym.Env):
     def binary_query(self):
         self.mids = (self.lows + self.highs) / 2
         # self.pcand = self.bcand
+        # print(self.wanted_point, self.badvs, self.mids)
         self.bcand = self.project(self.wanted_point, self.badvs, self.mids)
         # print(l2(self.pcand.raw.squeeze(0).numpy(), self.bcand.raw.squeeze(0).numpy()))
         # fig = plt.figure
         # plt.imshow(self.bcand.raw.squeeze(0).numpy(), cmap='gray')
         # plt.show()
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.bcand).raw.unsqueeze(1).to(device))
+        cand = self.normalize(self.bcand.raw).unsqueeze(0)
+        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
+        # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.bcand).raw.unsqueeze(1).to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.iter += 1
@@ -555,7 +561,7 @@ class HsjaGamesCIFAR(gym.Env):
         
     def grad_query(self):
         # print(self.gsteps)
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(1).to(device))
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(0).to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         # print(self.is_adv)
@@ -591,7 +597,7 @@ class HsjaGamesCIFAR(gym.Env):
 
     def jump_query(self):
         self.jcand = ep.clip(self.best_advs + self.jeps * self.grad, 0, 1)
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(1).to(device))
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(0).to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.jsteps += 1
@@ -715,7 +721,6 @@ class HsjaGamesCIFAR(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
 
         return np.reshape(reward, (1,))
 
@@ -724,12 +729,12 @@ class HsjaGamesCIFAR(gym.Env):
         originImgNr = random.randint(*self.indices)
         
         # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.dataset[originImgNr][0].to(device).unsqueeze(1))).cpu().detach().numpy() == self.dataset[originImgNr][1]:
+        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).to(device).unsqueeze(0))).cpu().detach().numpy() == self.dataset[originImgNr][1]:
             originImgNr = random.randint(*self.indices)
         
         # Make sure starting and original images do not belong to the same class, and starting is correctly classified
         while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.dataset[startImgNr][0].to(device).unsqueeze(1))).cpu().detach().numpy() == self.dataset[startImgNr][1]:
+            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).to(device).unsqueeze(0))).cpu().detach().numpy() == self.dataset[startImgNr][1]:
             startImgNr = random.randint(*self.indices)
         
         startImg = self.dataset[startImgNr][0].to(device)
@@ -755,57 +760,17 @@ class HsjaGamesCIFAR(gym.Env):
             theta = 1 / (self.dim ** 2)
             result = theta * self.dist 
         return result
-            
-    def switch(self, step, action):
-        # Return False if candidate lies within the action radius, otherwise True
-        # a = torch.tensor(action)
-        # b = torch.tensor(step)
-        # c = ep.astensor(a < b)
-        # If non-adaptive, return actual model decision
-        if self.adaptive == 0 or self.adaptive == 1:
-            return True
-        # if self.curr == 1 and step > 1:
-        #     print(step, action, self.iter)
-        # if self.curr == 2:
-        #     print(step, action, "BENIGN")
-        return action < step
     
     def swap(self, span, action):
         if action.shape == 1:
             action = action[0]
-        # if self.curr == 0 or self.curr == 1:
-        #     if self.phase == 1 or self.phase == 2:
-        #         print('ADV:', span, self.curr)
-        #     self.gstates.add(1, self.obs, self.phase, min(span), action)
-            # if self.phase == 1 or self.phase == 2:
-                # print("STATEA", self.phase, self.iter, '%.2f'%sum(self.obs[0:25]), '%.2f'%sum(self.obs[25:50]), '%.2f'%sum(self.obs[50:75]), '%.2f'%sum(self.obs[75:100]), '%.2f'%self.obs[100], '%.2f'%self.obs[101])
-            # if self.phase == 2:
-            # print("STATE1", self.phase, '%.2f'%sum(self.obs[0:25]), '%.2f'%sum(self.obs[25:50]), '%.2f'%sum(self.obs[50:75]), '%.2f'%self.obs[75], '%.2f'%self.obs[76])
-            # print(min(span), action[0], self.dist, self.phase, self.iter)
-            # print(self.phase, self.iter)
-        # if self.curr == 2:
-        #     print('BEN:', span, self.curr)
-        #     self.gstates.add(0, self.obs, 3, min(span), action)
-            # print("STATEB", '%.2f'%sum(self.obs[0:25]), '%.2f'%sum(self.obs[25:50]), '%.2f'%sum(self.obs[50:75]), '%.2f'%sum(self.obs[75:100]), '%.2f'%self.obs[100], '%.2f'%self.obs[101])
-            # print(min(span), action[0], 'ben')
-            # if min(span) < action[0]:
-        #         print("STATE", self.obs[0:6], self.obs[25:31], self.obs[50:60])
-        #         print(min(span), action[0], self.phase, self.queries, '-------------------------------------------------------------------BENIGN')
-            # else:
-            #     print(min(span), action[0], self.phase, self.queries, 'ben')
-        #     if min(span) < action[0]: print("\n") 
-            # print('benign')
-        # if self.phase == 2:
-        #     print(min(span), self.bsteps)
         if self.adaptive == 0:
             inn = min(span) > 0.05*self.intercept
         elif self.adaptive == 1:
             inn = True
         else:
             inn = min(span) > action
-            # inn = min(span) > 0.9
-        # inn = False
-        # train: adv and ben go to correct queue / test: the agent decides
+
         if self.train:
             if self.curr == 2:
                 alt = self.chain.addQuery(True)
@@ -813,10 +778,7 @@ class HsjaGamesCIFAR(gym.Env):
                 alt = self.chain.addQuery(False)
         else:
             alt = self.chain.addQuery(inn)
-            # if self.curr != 2 and inn:
-            #     print(self.iter)
-        # if self.curr == 0 or self.curr == 1:    
-        #     print(inn, self.is_adv)
+
         return inn, alt
    
     def get_benign(self, action):
@@ -824,9 +786,9 @@ class HsjaGamesCIFAR(gym.Env):
 
         # mu, sigma = 0, action # mean and standard deviation
         mu, sigma = 0, 0.1 # mean and standard deviation
-        s = np.random.normal(mu, sigma, 28*28)
+        s = np.random.normal(mu, sigma, 3*32*32)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
-        s = s.reshape(28,28).astype('float32')
+        s = s.reshape(3,32,32).astype('float32')
         # print(s.shape)
         # print(self.dataset[nr][0].shape)
         s = np.add(self.dataset[nr][0].squeeze(0).numpy(), s)
@@ -834,30 +796,6 @@ class HsjaGamesCIFAR(gym.Env):
         # print(type(benign))
         label = self.dataset[nr][1]
         return benign, label
-    
-    # def get_benign(self, action):
-    #     while True:
-    #         nr = np.random.randint(*self.indices)
-    #         label = self.dataset[nr][1]
-    #         if label == self.startLabel: break
-    #         # if self.train or self.iter % 2 == 0 or label == self.startLabel: break
-    #     # mu, sigma = 0, action # mean and standard deviation
-    #     mu, sigma = 0, 0.1 # mean and standard deviation
-    #     s = np.random.normal(mu, sigma, 28*28)
-    #     # s = torch.tensor(s.reshape(28,28).astype('float32'))
-    #     s = s.reshape(28,28).astype('float32')
-    #     # print(s.shape)
-    #     # print(self.dataset[nr][0].shape)
-    #     s = np.add(self.dataset[nr][0].squeeze(0).numpy(), s)
-    #     benign = np.clip(s,0,1)
-    #     # print(type(benign))
-    #     return benign, label
-    
-    # activation = {}
-    # def get_activation(name):
-    #     def hook(model, input, output):
-    #         activation[name] = output.detach()
-    #     return hook
     
     def get_info(self):
         correct = np.mean(self.correct) if len(self.correct) != 0 else 1

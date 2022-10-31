@@ -45,7 +45,6 @@ class BagsSkipCIFAR(gym.Env):
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
         self.scale = scale
-        self.tensorboard = tensorboard
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
@@ -84,7 +83,6 @@ class BagsSkipCIFAR(gym.Env):
     def reset(self):
         # Initialize new targeted attack
         self.iter = 0
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
@@ -94,7 +92,7 @@ class BagsSkipCIFAR(gym.Env):
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
         self.dist = self.gap
-        print(self.dist)
+        # print(self.dist)
         # Distance between successive steps
         self.diff = np.float32(0.0)
         # Moving average of the closing distance
@@ -124,7 +122,7 @@ class BagsSkipCIFAR(gym.Env):
             self.best_advs = self.starting_point
         
         cand = self.normalize(torch.tensor(self.best_advs))
-        is_adv  = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
+        is_adv = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
 
@@ -164,9 +162,8 @@ class BagsSkipCIFAR(gym.Env):
         # self.converged = self.dist < self.epsilon
         # if self.converged or self.iter >= self.steps:
         if self.iter >= self.steps:
-            self.tb.close()
             self.done = True
-            print(self.dist)
+            # print(self.dist)
         
         # Scale actions to proper values
         self.action_perlin = self.scale_perlin(action[0])
@@ -234,8 +231,6 @@ class BagsSkipCIFAR(gym.Env):
         self.unnormalized_source_direction = self.wanted_point - self.best_advs
         self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
         self.source_direction = self.unnormalized_source_direction / self.source_norm
-        # update tensorboard
-        # self.update_tb(is_best_adv, cond
 
         obs = self.observation()
         if np.isnan(obs).any():
@@ -373,7 +368,6 @@ class BagsSkipCIFAR(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         return reward
 
     def get_pair(self):

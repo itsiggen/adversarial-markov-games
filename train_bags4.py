@@ -225,7 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("2"), type=str, help="Model to load")
     parser.add_argument('--inter', default=float(2), type=float, help="Intercept")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")

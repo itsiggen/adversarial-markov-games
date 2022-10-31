@@ -201,8 +201,8 @@ def test(num, inter, rew):
                     intercept=inter)
     
     # Load the trained agents
-    interceptor = RPPO.load("mods/games/bags4int_" + str(num) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bags4adv.pt", envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/cbags4int_" + str(num) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/cbags4adv.pt", envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
 
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("2"), type=str, help="Model to load")
     parser.add_argument('--inter', default=float(2), type=float, help="Intercept")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
@@ -234,7 +234,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=50, gc_after_trial=True)
+        study.optimize(objective, n_trials=50, n_jobs=1, gc_after_trial=True)
     else:
         mean_eps, mean_acc = test(args.load, args.inter, args.rew)
     # train(args)

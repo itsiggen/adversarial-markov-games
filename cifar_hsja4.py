@@ -30,7 +30,6 @@ def objective(trial):
     defended = True
     cont = 1 # contrastive model used
     seed = 2
-    logdir = "./logs/"
     
     # ts = trial.suggest_categorical('ts', [1e6,5e6])
     steps = trial.suggest_categorical('steps', [1000,2000,3200])
@@ -266,7 +265,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=50, gc_after_trial=True)
+        study.optimize(objective, n_trials=50, n_jobs=1, gc_after_trial=True)
     else:
         mean_eps, mean_acc = test(args.load, args.inter, args.rew)
     # train(args)

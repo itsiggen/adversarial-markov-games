@@ -231,7 +231,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=20, gc_after_trial=True)
+        study.optimize(objective, n_trials=50, n_jobs=-1, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
     # train(args)

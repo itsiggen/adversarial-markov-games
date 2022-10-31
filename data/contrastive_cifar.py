@@ -14,12 +14,17 @@ cuda = torch.cuda.is_available()
 class EmbeddingNet(nn.Module):
     def __init__(self):
         super(EmbeddingNet, self).__init__()
-        self.convnet = nn.Sequential(nn.Conv2d(25, 64, 5), nn.PReLU(),
-                                     nn.MaxPool2d(2, stride=2),
-                                     nn.Conv2d(64, 64, 5), nn.PReLU(),
-                                     nn.MaxPool2d(2, stride=2))
+        # self.convnet = nn.Sequential(nn.Conv2d(75, 64, 5), nn.PReLU(),
+        #                              nn.MaxPool2d(2, stride=2),
+        #                              nn.Conv2d(64, 64, 5), nn.PReLU(),
+        #                              nn.MaxPool2d(2, stride=2))
 
-        self.fc = nn.Sequential(nn.Linear(64 * 4 * 4, 256),
+        self.convnet = nn.Sequential(nn.Conv3d(3, 64, 5), nn.PReLU(),
+                                     nn.MaxPool3d(2, stride=2),
+                                     nn.Conv3d(64, 64, 5), nn.PReLU(),
+                                     nn.MaxPool3d(2, stride=2))
+
+        self.fc = nn.Sequential(nn.Linear(64 * 3 * 5 * 5, 256),
                                 nn.PReLU(),
                                 nn.Linear(256, 256),
                                 nn.PReLU(),
@@ -28,6 +33,7 @@ class EmbeddingNet(nn.Module):
 
     def forward(self, x):
         output = self.convnet(x)
+        # print(output.shape)
         output = output.view(output.size()[0], -1)
         output = self.fc(output)
         return output
@@ -72,7 +78,7 @@ class TripletLoss(nn.Module):
         losses = F.relu(distance_positive - distance_negative + self.margin)
         return losses.mean() if size_average else losses.sum()
 
-class TripletMNIST(Dataset):
+class TripletCIFAR(Dataset):
     """
     Train: For each sample (anchor) randomly chooses a positive and negative samples
     Test: Creates fixed triplets for testing
@@ -139,13 +145,14 @@ class TripletMNIST(Dataset):
             img2 = self.test_data[self.test_triplets[index][1]]
             img3 = self.test_data[self.test_triplets[index][2]]
 
-        # img1 = Image.fromarray(img1.numpy(), mode='L')
-        # img2 = Image.fromarray(img2.numpy(), mode='L')
-        # img3 = Image.fromarray(img3.numpy(), mode='L')
-        # if self.transform is not None:
-        #     img1 = self.transform(img1)
-        #     img2 = self.transform(img2)
-        #     img3 = self.transform(img3)
+        # [25, 3, 32, 32] viewed as [75, 32, 32]
+        # img1 = img1.view(-1, *img1.shape[2:])
+        # img2 = img2.view(-1, *img2.shape[2:])
+        # img3 = img3.view(-1, *img3.shape[2:])
+        img1 = img1.view(3,25,32,32)
+        img2 = img2.view(3,25,32,32)
+        img3 = img3.view(3,25,32,32)
+        # print(img1.shape)
         return (img1, img2, img3), []
 
     def __len__(self):
@@ -154,8 +161,6 @@ class TripletMNIST(Dataset):
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[]):
 
     for epoch in range(n_epochs):
-        scheduler.step()
-
         # Train stage
         train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics)
 
@@ -165,6 +170,8 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
 
         val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
         val_loss /= len(val_loader)
+        
+        scheduler.step()
 
         message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs,
                                                                                  val_loss)
@@ -261,9 +268,8 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
     return val_loss, metrics
 
 if __name__ == "__main__":
-    triplet_train_dataset = TripletMNIST(train=True)
-    triplet_test_dataset = TripletMNIST(train=False)
-    
+    triplet_train_dataset = TripletCIFAR(train=True)
+    triplet_test_dataset = TripletCIFAR(train=False)
     
     batch_size = 256
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
@@ -281,6 +287,8 @@ if __name__ == "__main__":
     scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
     n_epochs = 20
     log_interval = 100
+    
+    # print(triplet_train_dataset.train_data[0])
     
     fit(triplet_train_loader, triplet_test_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval)
     torch.save(model.state_dict(), "contrastive.pt")

@@ -89,6 +89,7 @@ class Chain():
     def __init__(self, nrQueues=3, sizeState=30, train=True, dataset='mnist'):
         self.simenc = SimEnc(dataset)
         self.dim = 28 if dataset=='mnist' else 32
+        self.shape = [28,28] if dataset=='mnist' else [3,32,32]
         self.sizeState = sizeState
         self.train = train
         self.nrQueues = nrQueues
@@ -98,7 +99,7 @@ class Chain():
         self.adds = 0
         self.switch = True
         for i in range(self.nrQueues):
-            self.queues.append(Queue(self.sizeState,self.dim))
+            self.queues.append(Queue(self.sizeState,self.dim,self.shape))
         # MNIST values    
         self.queues[0].stepsize.append(0.2)
         self.queues[1].stepsize.append(10)
@@ -182,83 +183,84 @@ class Chain():
         return self.queues[queueNumber].getLastStateRepresentation()
     
     
-class Queues():
-    def __init__(self, nrQueues=2, sizeState=30, threshold=0.3, dataset='mnist'):
-        self.simenc = SimEnc(dataset)
-        self.dim = 28 if dataset=='mnist' else 32
-        # self.encs = deque(maxlen=history)
-        # self.encs.append(0)
-        self.queues = []        
-        self.threshold = threshold
-        self.sizeState = sizeState        
-        self.nrQueues = nrQueues
-        self.adds = 0
-        self.lastQueueUsed = [i for i in range(nrQueues)]
-        for i in range(nrQueues):
-            self.queues.append(Queue(self.sizeState, self.dim))
-        # MNIST values    
-        self.queues[0].stepsize.append(0.2)
-        self.queues[1].stepsize.append(10)
+# class Queues():
+#     def __init__(self, nrQueues=2, sizeState=30, threshold=0.3, dataset='mnist'):
+#         self.simenc = SimEnc(dataset)
+#         self.dim = 28 if dataset=='mnist' else 32
+#         # self.encs = deque(maxlen=history)
+#         # self.encs.append(0)
+#         self.queues = []        
+#         self.threshold = threshold
+#         self.sizeState = sizeState        
+#         self.nrQueues = nrQueues
+#         self.adds = 0
+#         self.lastQueueUsed = [i for i in range(nrQueues)]
+#         for i in range(nrQueues):
+#             self.queues.append(Queue(self.sizeState, self.dim))
+#         # MNIST values    
+#         self.queues[0].stepsize.append(0.2)
+#         self.queues[1].stepsize.append(10)
             
-    # assign to queue based on minimum similarity encoding
-    def addQuery(self, query, logits):
-        # torch.tensor(query).unsqueeze(0).unsqueeze(3)
-        # print(type(query))
-        simEnc = self.simenc.getSimilarityEncoding(query)
-        # encs = [l2(enc, simEnc) for enc in self.encs]
-        # # if any(encs) < self.threshold:
-        # print(encs)
-        # self.encs.append(simEnc)
-        # a = []
-        # for i, queue in enumerate(self.queues):
-        #     a.append(l2(queue.getEncoding(), simEnc))
-        # # mb online update of threshold
-        # if a[np.argmin(a)] < self.threshold:
-        #     index = np.argmin(a)
-        # else:
-        #     index = 1
-        if self.adds == 0:
-            index = 0
-        elif self.adds == 1:
-            index = 1
-        elif self.adds == 2:
-            index = 0
-        else:
-            x = l2(self.queues[0].getEncoding(-1), simEnc)
-            y = l2(self.queues[0].getEncoding(-2), simEnc)
-            z = l2(self.queues[1].getEncoding(-1), simEnc)
-            index = 0 if x < self.threshold or y < self.threshold or z < self.threshold else 1
-            # index = 0 if t < self.threshold else 1
-            # print(x,y,z, index)
-        self.queues[index].addQueryToQueue(query, logits, simEnc)
-        self.adds += 1
-        # if self.adds > 2:
-        #     print(l2(self.queues[index].encodings[-2], simEnc))
-        return index
+#     # assign to queue based on minimum similarity encoding
+#     def addQuery(self, query, logits):
+#         # torch.tensor(query).unsqueeze(0).unsqueeze(3)
+#         # print(type(query))
+#         simEnc = self.simenc.getSimilarityEncoding(query)
+#         # encs = [l2(enc, simEnc) for enc in self.encs]
+#         # # if any(encs) < self.threshold:
+#         # print(encs)
+#         # self.encs.append(simEnc)
+#         # a = []
+#         # for i, queue in enumerate(self.queues):
+#         #     a.append(l2(queue.getEncoding(), simEnc))
+#         # # mb online update of threshold
+#         # if a[np.argmin(a)] < self.threshold:
+#         #     index = np.argmin(a)
+#         # else:
+#         #     index = 1
+#         if self.adds == 0:
+#             index = 0
+#         elif self.adds == 1:
+#             index = 1
+#         elif self.adds == 2:
+#             index = 0
+#         else:
+#             x = l2(self.queues[0].getEncoding(-1), simEnc)
+#             y = l2(self.queues[0].getEncoding(-2), simEnc)
+#             z = l2(self.queues[1].getEncoding(-1), simEnc)
+#             index = 0 if x < self.threshold or y < self.threshold or z < self.threshold else 1
+#             # index = 0 if t < self.threshold else 1
+#             # print(x,y,z, index)
+#         self.queues[index].addQueryToQueue(query, logits, simEnc)
+#         self.adds += 1
+#         # if self.adds > 2:
+#         #     print(l2(self.queues[index].encodings[-2], simEnc))
+#         return index
 
-    def getState(self, index):
-        return self.queues[index].getStateRepresentation()
+#     def getState(self, index):
+#         return self.queues[index].getStateRepresentation()
                
-    def getStepSizeQueue(self,queueNumber):
-        # print(queueNumber)
-        return self.queues[queueNumber].getStepSize()
+#     def getStepSizeQueue(self,queueNumber):
+#         # print(queueNumber)
+#         return self.queues[queueNumber].getStepSize()
     
-    def getOriginQueue(self,queueNumber):
-        return self.queues[queueNumber].getOrigin()
+#     def getOriginQueue(self,queueNumber):
+#         return self.queues[queueNumber].getOrigin()
     
-    def getLastStepQueue(self,queueNumber):
-        return self.queues[queueNumber].getLastStep()
+#     def getLastStepQueue(self,queueNumber):
+#         return self.queues[queueNumber].getLastStep()
     
-    def getQueueIsFull(self,queueNumber):
-        return self.queues[queueNumber].getIfQueueIsFull()
+#     def getQueueIsFull(self,queueNumber):
+#         return self.queues[queueNumber].getIfQueueIsFull()
     
-    def getLastStateRepresentationQueue(self,queueNumber):
-        return self.queues[queueNumber].getLastStateRepresentation()
+#     def getLastStateRepresentationQueue(self,queueNumber):
+#         return self.queues[queueNumber].getLastStateRepresentation()
 
 class Queue():
-    def __init__(self, sizeState, dim):
+    def __init__(self, sizeState, dim, shape):
         self.sizeState = sizeState
         self.dim = dim
+        self.shape = shape
         self.sizeQueueMemory = 30
         self.amountOfQueries = 0
         self.encodings = []
@@ -274,14 +276,15 @@ class Queue():
         self.encodings.append(np.ones((1,256)))
         self.encodings.append(np.ones((1,256))/2)
         self.cosines.append(0)
-        if self.dim == 28:
-            self.fQuery = np.ones((self.dim,self.dim))
-            self.queryMemory.append(np.ones((self.dim,self.dim)))
-            self.queryMemory.append(np.ones((self.dim,self.dim))/2)
-        else:
-            self.fQuery = np.ones((3,self.dim,self.dim))
-            self.queryMemory.append(np.ones((3,self.dim,self.dim)))
-            self.queryMemory.append(np.ones((3,self.dim,self.dim))/2)
+        # if self.dim == 28:
+        # print(*shape)
+        self.fQuery = np.ones((shape))
+        self.queryMemory.append(np.ones((shape)))
+        self.queryMemory.append(np.ones((shape))/2)
+        # else:
+        #     self.fQuery = np.ones((3,self.dim,self.dim))
+        #     self.queryMemory.append(np.ones((3,self.dim,self.dim)))
+        #     self.queryMemory.append(np.ones((3,self.dim,self.dim))/2)
 
     def addQueryToQueue(self, query, logit, similaritySpaceEncoding):
         # self.lastBenignLabel = realLabel
@@ -668,7 +671,7 @@ class Queue():
         return np.asarray(np.concatenate((sum(state1), sum(state2), sum(state3), sum(state4), state5), axis=None)), x
     
     def getStateRepresentation9(self, enc, query, logits):
-        x = torch.empty(size=(25,self.dim,self.dim))
+        x = torch.empty(size=(25,*self.shape))
         rg = len(self.queryMemory)
         if rg > 24:
             for i in range(25):

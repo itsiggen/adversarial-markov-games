@@ -56,7 +56,6 @@ class HsjaGames(gym.Env):
         self.radv = radv
         self.scale = scale
         self.intercept = intercept
-        self.tensorboard = tensorboard
         self.chain = Chain(nrQueues=3, dataset='mnist')
         
         # for plotting game states
@@ -134,7 +133,6 @@ class HsjaGames(gym.Env):
         self.reps = 0           # num of attack reps
         self.queries = 0        # num of benign queries
         self.repdone = 0
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         self.startLabel = startLabel
         self.originLabel = originLabel
@@ -336,7 +334,6 @@ class HsjaGames(gym.Env):
     def step_adv(self, action):
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
         if self.iter >= self.steps:
-            self.tb.close()
             self.done = True
         self.repdone = 0
         self.phase = 0
@@ -717,7 +714,6 @@ class HsjaGames(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
 
         return np.reshape(reward, (1,))
 

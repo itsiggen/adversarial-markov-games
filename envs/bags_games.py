@@ -51,7 +51,6 @@ class BagsGames(gym.Env):
         self.radv = radv
         self.intercept = intercept
         self.scale = scale
-        self.tensorboard = tensorboard
         self.chain = Chain(nrQueues=3, dataset='mnist')
         
         # random state for benign query generation
@@ -103,7 +102,6 @@ class BagsGames(gym.Env):
         """
         self.iter = 0           # num of attack queries
         self.queries = 0        # num of benign queries
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
@@ -313,7 +311,6 @@ class BagsGames(gym.Env):
         # self.converged = self.dist < self.epsilon
         # if self.converged or self.iter >= self.steps:
         if self.iter >= self.steps:
-            self.tb.close()
             self.done = True
         
         # Scale actions to proper values
@@ -549,7 +546,6 @@ class BagsGames(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        # self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         # print("rew", reward_nr, reward)
 
         return np.reshape(reward, (1,))
