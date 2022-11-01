@@ -257,29 +257,15 @@ class BagsGamesCIFAR(gym.Env):
                 if self.improve_last >= 49:
                     self.na_batch = 1
                 self.gain = np.float32(0)
-            
-            # self.unnormalized_source_direction = self.wanted_point - self.best_advs
-            # self.source_norm = np.linalg.norm(self.unnormalized_source_direction)
-            # self.source_direction = self.unnormalized_source_direction / self.source_norm
-            # update tensorboard
-            # self.update_tb(is_best_adv, cond
     
             # store obs so it can be returned from benign
             self.obs = self.obs_adv()
 
             r = self.reward_adv(self.radv)
-            # info = self.get_info()
-            # Set state to interceptor
-            # self.curr = 0
-            # return self.obs, r, self.done, info
+
         
         elif self.curr == 2:
-            # Classify benign input
-            # if self.switch(self.lastStep, action):
-            #     # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
-            #     ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
-            # else:
-            #     ans = self.alt
+
             candid, alt = self.swap(self.span, action)
             if candid:
                 ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
@@ -553,6 +539,7 @@ class BagsGamesCIFAR(gym.Env):
             action = action[0]
         if self.adaptive == 0:
             inn = min(span) > 0.01*self.intercept
+            # print(inn, self.curr)
         elif self.adaptive == 1:
             inn = True
         else:
@@ -597,7 +584,7 @@ class BagsGamesCIFAR(gym.Env):
     def get_benign(self, action):
         nr = self.rn.randint(*self.indices)
         
-        mu, sigma = 0, 0.1 # mean and standard deviation
+        mu, sigma = 0, 0.01 # mean and standard deviation
         s = np.random.normal(mu, sigma, self.dim*self.dim)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(self.dim,self.dim).astype('float32')
@@ -610,7 +597,8 @@ class BagsGamesCIFAR(gym.Env):
         return benign, label
     
     def get_info(self):
-        correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        # correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        correct = np.mean(self.correct) if self.done else 'NA'
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
                 "epsilon" : self.dist,

@@ -286,7 +286,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
     n_epochs = 20
-    log_interval = 100
+    log_interval = 50
     
     # print(triplet_train_dataset.train_data[0])
     

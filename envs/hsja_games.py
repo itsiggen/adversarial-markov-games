@@ -11,7 +11,7 @@ from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import Chain, l2, Contrasts
 from utils.utils import get_is_adversarial, GameStates
-from data.contrastive import EmbeddingNet, TripletNet
+from data.contrastive import EmbeddingNet
 from typing import List
 from models.trainMNISTtorch import Net
 import gc

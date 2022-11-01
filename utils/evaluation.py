@@ -125,9 +125,10 @@ def evaluate_rpolicy(
             agent_steps[curr] += 1
             if curr == 0 and prev == 1:
                 epsilon.append(_info['epsilon'])
-                correct = _info['correct']
+                # correct = _info['correct']
             if done:
                 gap = _info['gap']
+                correct = _info['correct']
                 curr, nxt = 1, 0
         episode_rewards.append(agent_rewards)
         lengths.append(agent_steps)
@@ -207,12 +208,13 @@ def evaluate_rdpolicy(
             if curr == 0 and prev == 1:
                 epsilon.append(_info['epsilon'])
                 iters.append(_info['iterations'])
-                correct = _info['correct']
+                # correct = _info['correct']
                 # print(env.iter, done)
             if done:
                 # print(done)
                 # print('DONE', epsilon[-1])
                 gap = _info['gap']
+                correct = _info['correct']
                 curr, nxt = 1, 0
         episode_rewards.append(agent_rewards)
         lengths.append(agent_steps)
@@ -281,12 +283,15 @@ def evaluate_rtpolicy(
             if curr == 0 and prev == 1:
                 epsilon.append(_info['epsilon'])
                 iters.append(_info['iterations'])
-                correct = _info['correct']
+                # correct = _info['correct']
+                # print(correct)
                 # print(env.iter, done)
             if done:
                 # print(done)
                 # print('DONE', epsilon[-1])
                 gap = _info['gap']
+                correct = _info['correct']
+                # print(correct)
                 curr, nxt = 1, 0
         epsilons.append(epsilon)
         iterations.append(iters)

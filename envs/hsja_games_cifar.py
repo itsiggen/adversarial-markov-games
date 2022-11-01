@@ -89,14 +89,14 @@ class HsjaGamesCIFAR(gym.Env):
         self.contrast_model = EmbeddingNet()
         if cont == 1:
             if defended:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_v.pt', map_location=device))
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
             else:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_v.pt', map_location=device))
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
         elif cont == 2:
             if defended:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_t.pt', map_location=device))
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
             else:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_t.pt', map_location=device))
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
         elif cont == 0:
             pass
         self.contrast_model.eval()
@@ -785,7 +785,7 @@ class HsjaGamesCIFAR(gym.Env):
         nr = self.rn.randint(*self.indices)
 
         # mu, sigma = 0, action # mean and standard deviation
-        mu, sigma = 0, 0.1 # mean and standard deviation
+        mu, sigma = 0, 0.01 # mean and standard deviation
         s = np.random.normal(mu, sigma, 3*32*32)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(3,32,32).astype('float32')
@@ -798,7 +798,8 @@ class HsjaGamesCIFAR(gym.Env):
         return benign, label
     
     def get_info(self):
-        correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        # correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        correct = np.mean(self.correct) if self.done else 'NA'
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
                 "epsilon" : self.dist,
