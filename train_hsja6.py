@@ -159,16 +159,7 @@ def objective(trial):
     print("Saving models...")
     interceptor.save("mods/games/hsja6int_" + str(trial.number) + ".pt")
     adversary.save("mods/games/hsja6adv.pt")
-    # env.save("mods/games/normed_" + str(trial.number) + ".pkl")
-    # env.gstates.save("mods/data/hsja4_" + str(trial.number) + ".csv")
-    # if norm:
-    #     interceptor.RecNorm.save("mods/games/inormed_" + str(trial.number) + ".pkl")
-    #     adversary.RecNorm.save("mods/games/anormed_" + str(trial.number) + ".pkl")
-    
-    
-    # Make evaluation env
-    # envv = gym.make("HsjaGames-v0", steps=eval_steps, ratio_benign=ratio, adaptive=adaptive, dataset=dataset, defended=defended, train=False, rint=rint, radv=radv, intercept=inter)
-    # Different seed for validation pairs.
+
     seed = 3
     envv = gym.make("HsjaGames-v0",
                     steps=eval_steps,
@@ -184,7 +175,7 @@ def objective(trial):
     # Load the trained agents
 
     interceptor = RPPO.load("mods/games/hsja6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/hsja6adv.pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/hsja6adv.pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 

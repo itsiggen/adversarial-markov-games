@@ -30,6 +30,7 @@ class HsjaGames(gym.Env):
         max_gradient_eval_steps: int = 10000,
         gamma: float = 1.0,
         defended = False,
+        vanilla = False,
         adaptive: int = 0,
         cont: int = 1,
         ratio_benign = 0.5,
@@ -39,7 +40,6 @@ class HsjaGames(gym.Env):
         scale = 200,
         dataset = None,
         intercept = 1,
-        tensorboard = False
         ):
         super(HsjaGames, self).__init__()
 
@@ -50,6 +50,7 @@ class HsjaGames(gym.Env):
         self.max_grad_evals = max_gradient_eval_steps
         self.gamma = gamma
         self.adaptive = adaptive  # 0: stateful det | 1: adv adaptive | 2: int adaptive | 3: both adaptive
+        self.vanilla = vanilla
         self.ratio_benign = ratio_benign
         self.train = train
         self.rint = rint
@@ -798,7 +799,10 @@ class HsjaGames(gym.Env):
         if self.adaptive == 0:
             inn = min(span) > 0.05*self.intercept
         elif self.adaptive == 1:
-            inn = True
+            if self.vanilla:
+                inn = min(span) > 0.05*self.intercept
+            else:
+                inn = True
         else:
             inn = min(span) > action
             # inn = min(span) > 0.9
@@ -858,7 +862,8 @@ class HsjaGames(gym.Env):
     #     return hook
     
     def get_info(self):
-        correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        # correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        correct = np.mean(self.correct) if self.done else 'NA'
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
                 "epsilon" : self.dist,

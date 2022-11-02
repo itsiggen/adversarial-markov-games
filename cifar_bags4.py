@@ -5,6 +5,7 @@ import gc
 import pandas as pd
 import numpy as np
 import optuna
+import threading
 from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
@@ -99,8 +100,12 @@ def objective(trial):
     done = False
     curr, nxt = 1, 0
     n_steps = 0
-        
-    for timestep in tqdm(range(total_timesteps), disable=False):
+      
+                    
+    print(threading.active_count())
+    print(threading.enumerate())
+    
+    for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move

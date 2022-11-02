@@ -1,7 +1,6 @@
 import argparse
 import gym
 import os
-import pandas as pd
 import numpy as np
 import optuna
 from tqdm import tqdm
@@ -10,7 +9,6 @@ from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 from envs.hsja_games_cifar import HsjaGamesCIFAR
-from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
@@ -105,6 +103,7 @@ def objective(trial):
     
     for agent in agents:
         agent.setup_learn()
+    print(interceptor.mode, adversary.mode)
     obs = env.reset()
     agents[0].set_last(obs, False)
     done = False
@@ -150,10 +149,10 @@ def objective(trial):
             else:
                 agents[0].proceed(obs, reward, done, info)
 
-    # Save the trained agents
+    # Save the contrasts
+    # env.contrasts.save()
     
-    env.contrasts.save()
-    
+    # Save the trained agents    
     print("Saving models...")
     interceptor.save("mods/games/chsja4int_" + str(trial.number) + ".pt")
     adversary.save("mods/games/chsja4adv.pt")
@@ -265,7 +264,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=50, n_jobs=1, gc_after_trial=True)
+        study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
         mean_eps, mean_acc = test(args.load, args.inter, args.rew)
     # train(args)

@@ -2,7 +2,6 @@ import argparse
 import gym
 import os
 import gc
-import pandas as pd
 import numpy as np
 import optuna
 from tqdm import tqdm
@@ -29,7 +28,6 @@ def objective(trial):
     ratio = 0.5
     defended = False
     seed = 2
-    logdir = "./logs/"
     
     steps = trial.suggest_categorical('steps', [1000,2500,4000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])

@@ -28,6 +28,7 @@ class BagsGames(gym.Env):
         source_step: float = 1e-2,
         defended = False,
         adaptive: int = 0,
+        vanilla = False,
         ratio_benign = 0.5,
         train = True,
         rint = 1,
@@ -45,6 +46,7 @@ class BagsGames(gym.Env):
         self.spherical_step = spherical_step
         self.source_step = source_step
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
+        self.vanilla = vanilla
         self.ratio_benign = ratio_benign
         self.train = train
         self.rint = rint
@@ -583,7 +585,10 @@ class BagsGames(gym.Env):
         if self.adaptive == 0:
             inn = min(span) > 0.05*self.intercept
         elif self.adaptive == 1:
-            inn = True
+            if self.vanilla:
+                inn = min(span) > 0.05*self.intercept
+            else:
+                inn = True
         else:
             inn = min(span) > action
         # ACHTUNG! before it went
@@ -639,7 +644,8 @@ class BagsGames(gym.Env):
         return benign, label
     
     def get_info(self):
-        correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        # correct = np.mean(self.correct) if len(self.correct) != 0 else 1
+        correct = np.mean(self.correct) if self.done else 'NA'
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
                 "epsilon" : self.dist,

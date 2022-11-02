@@ -19,6 +19,7 @@ dataset = datasets.MNIST('./data', train=False, transform=transform, download=Tr
 def objective(trial):
     
     adaptive = 1 # adv adaptive, plus stateful defense 
+    vanilla = True,
     ratio = 0.5
     stt = 1 # adversary is learning
     cont = 0
@@ -43,6 +44,7 @@ def objective(trial):
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
+                   vanilla=vanilla,
                    dataset=dataset,
                    train=False,
                    cont=cont,
@@ -175,6 +177,7 @@ def reset():
 def test(num, rew):
     eval_steps = 5000
     adaptive = 1
+    vanilla = True,
     defended = True
     ratio = 0.5
     cont = 0
@@ -186,6 +189,7 @@ def test(num, rew):
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
+                    vanilla=vanilla,
                     dataset=dataset,
                     defended=defended,
                     cont=cont,
@@ -222,7 +226,6 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("14"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")

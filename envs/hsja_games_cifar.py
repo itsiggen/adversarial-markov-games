@@ -9,7 +9,7 @@ from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import Chain, l2, Contrasts
 from utils.utils import get_is_adversarial
-from data.contrastive import EmbeddingNet
+from data.contrastive_cifar import EmbeddingNet
 from typing import List
 from models.trainCIFARtorch import resnet20
 from torchvision import transforms
@@ -30,6 +30,7 @@ class HsjaGamesCIFAR(gym.Env):
         gamma: float = 1.0,
         defended = False,
         adaptive: int = 0,
+        vanilla = False,
         cont: int = 1,
         ratio_benign = 0.5,
         train = True,
@@ -38,7 +39,6 @@ class HsjaGamesCIFAR(gym.Env):
         scale = 200,
         dataset = None,
         intercept = 1,
-        tensorboard = False
         ):
         super(HsjaGamesCIFAR, self).__init__()
 
@@ -49,6 +49,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.max_grad_evals = max_gradient_eval_steps
         self.gamma = gamma
         self.adaptive = adaptive  # 0: stateful det | 1: adv adaptive | 2: int adaptive | 3: both adaptive
+        self.vanilla = vanilla,
         self.ratio_benign = ratio_benign
         self.train = train
         self.rint = rint
@@ -57,6 +58,8 @@ class HsjaGamesCIFAR(gym.Env):
         self.intercept = intercept
         self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
+        
+        self.tt = 0
         
         # random state for benign query generation
         self.rn = np.random.RandomState(1337)
@@ -73,7 +76,7 @@ class HsjaGamesCIFAR(gym.Env):
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
-        # Load CIFAR pytorch Resnet20 model -- 92.1% acc -- 88.25% acc adversarially trained
+        # Load CIFAR pytorch Resnet20 model -- 92.1/87.74 acc -- 88.25/ acc adversarially trained
         self.dataset = dataset
 
         model = resnet20()
@@ -237,11 +240,6 @@ class HsjaGamesCIFAR(gym.Env):
         action = self.scale_intercept(action)
         if self.curr == 2:
             # Classify benign input
-            # if self.switch(self.lastStep, action):
-            #     # print(np.argsort(torch.nn.functional.softmax(self.logits[0]))[-1])
-            #     ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
-            # else:
-            #     ans = self.alt
             candid, alt = self.swap(self.span, action)
             if candid:
                 ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
@@ -395,7 +393,7 @@ class HsjaGamesCIFAR(gym.Env):
     def step_ben(self, action):
         self.queries += 1
         candidate, self.label = self.get_benign(action)
-        self.logits = self.model(torch.tensor(candidate).unsqueeze(0).to(device))
+        self.logits = self.model(self.normalize(torch.tensor(candidate).unsqueeze(0)).to(device))
         self.logits = self.logits.cpu()
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
         obs, self.span = self.obs_int(self.logits, candidate, 0)
@@ -440,11 +438,12 @@ class HsjaGamesCIFAR(gym.Env):
         if self.adaptive == 2 or self.adaptive == 3:
             obs, cont = self.chain.getState(2)
             # Add to contrastive dataset
-            self.contrasts.add(cont, label)
+            # self.contrasts.add(cont, label)
             # print(cont.shape)
-            # with torch.no_grad():
-            #     obs = self.contrast_model(cont).detach().numpy()
-            obs = np.zeros(shape=(64,))
+            with torch.no_grad():
+                # print(cont.shape)
+                obs = self.contrast_model(cont.view(1,3,25,32,32)).detach().numpy()
+            # obs = np.zeros(shape=(64,))
         else:
             obs = np.zeros(shape=(64,))
         # print(max(max(obs)))
@@ -762,12 +761,21 @@ class HsjaGamesCIFAR(gym.Env):
         return result
     
     def swap(self, span, action):
+        # if self.curr == 0 or self.curr == 1:
+            # print('ADV:', span, self.curr)
+        # if self.curr == 2:
+        #     if min(span) < 0.01: self.tt += 1
+        #     print('BEN:', span, self.tt, self.queries)
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
-            inn = min(span) > 0.05*self.intercept
+            inn = min(span) > 0.01*self.intercept
+            # print(inn, self.curr)
         elif self.adaptive == 1:
-            inn = True
+            if self.vanilla:
+                inn = min(span) > 0.01*self.intercept
+            else:
+                inn = True
         else:
             inn = min(span) > action
 

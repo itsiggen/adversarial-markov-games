@@ -115,7 +115,7 @@ class RPPO(PPO):
             if self.mode:
                 # vectorized, remove first dim to pass to predict
                 obs_tensor = th.squeeze(obs_tensor, 0)
-                actions, _ = self.policy.predict(obs_tensor, deterministic=True)
+                actions, _ = self.policy.predict(obs_tensor.cpu(), deterministic=True)
                 actions = np.expand_dims(actions, axis=0)
             else:
                 actions, self.values, self.log_probs = self.policy.forward(obs_tensor)

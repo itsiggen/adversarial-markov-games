@@ -29,6 +29,7 @@ class BagsGamesCIFAR(gym.Env):
         source_step: float = 1e-2,
         defended = False,
         adaptive: int = 0,
+        vanilla = False,
         ratio_benign = 0.5,
         train = True,
         rint = 1,
@@ -46,6 +47,7 @@ class BagsGamesCIFAR(gym.Env):
         self.spherical_step = spherical_step
         self.source_step = source_step
         self.adaptive = adaptive  # 0: none adaptive | 1: adv adaptive | 2: int adaptive | 3: both adaptive
+        self.vanilla = vanilla
         self.ratio_benign = ratio_benign
         self.train = train
         self.rint = rint
@@ -265,7 +267,7 @@ class BagsGamesCIFAR(gym.Env):
 
         
         elif self.curr == 2:
-
+            # Classify benign input
             candid, alt = self.swap(self.span, action)
             if candid:
                 ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
@@ -541,7 +543,10 @@ class BagsGamesCIFAR(gym.Env):
             inn = min(span) > 0.01*self.intercept
             # print(inn, self.curr)
         elif self.adaptive == 1:
-            inn = True
+            if self.vanilla:
+                inn = min(span) > 0.01*self.intercept
+            else:
+                inn = True
         else:
             inn = min(span) > action
         # ACHTUNG! before it went
