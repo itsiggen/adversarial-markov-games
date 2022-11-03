@@ -31,14 +31,14 @@ def objective(trial):
     eval_steps = 5000
     steps = trial.suggest_categorical('steps', [1000,2000,3000])
     buffer = 2048
-    batch = 128
-    lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001])
+    batch = trial.suggest_categorical('batch', [32,64,128])
+    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = trial.suggest_categorical('ent_coef', [0,0.00001])
-    scale = trial.suggest_categorical('scale', [20,25])
+    scale = trial.suggest_categorical('scale', [5,10,20])
     radv = trial.suggest_categorical('reward', [1,2,3,4,5])
-    ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
     # ts = 6e5
 
 
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("16"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
     parser.add_argument('--scale', default=int(10), type=bool, help="Scale used")
