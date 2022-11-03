@@ -61,8 +61,9 @@ class HsjaGamesCIFAR(gym.Env):
         
         self.tt = 0
         
-        # random state for benign query generation
+        # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
+        self.rnn = np.random.RandomState(60)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -148,6 +149,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]).to(device))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point.cpu(), self.wanted_point.cpu())
+        # print(self.gap)
         self.dist = self.gap
         self.imp = 0
         # Distance between successive steps
@@ -794,7 +796,7 @@ class HsjaGamesCIFAR(gym.Env):
 
         # mu, sigma = 0, action # mean and standard deviation
         mu, sigma = 0, 0.01 # mean and standard deviation
-        s = np.random.normal(mu, sigma, 3*32*32)
+        s = self.rnn.normal(mu, sigma, 3*32*32)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(3,32,32).astype('float32')
         # print(s.shape)

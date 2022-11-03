@@ -15,7 +15,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
 
 eval_steps = 5000
 adaptive = 0 # non-adaptive, just stateful defense 

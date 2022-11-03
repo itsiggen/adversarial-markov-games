@@ -47,7 +47,7 @@ def objective(trial):
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
-                   vanila=vanilla,
+                   vanilla=vanilla,
                    dataset=dataset,
                    train=False,
                    scale=scale,
@@ -185,7 +185,7 @@ def test(num, rew, scale):
                     radv=rew)
         
     
-    interceptor = RPPO.load("mods/games/bags4int.pt", envv, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/bags6int_0.pt", envv, "interceptor", seed)
     # adversary = RPPO.load("mods/games/bags3adv_" + str(num) + ".pt" , envv, "adversary", seed)
     adversary = RPPO.load("mods/cifarbags_" + str(num) + "_model.pt", envv, "adversary", seed=seed)
 
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("16"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
     parser.add_argument('--scale', default=int(10), type=bool, help="Scale used")

@@ -56,8 +56,9 @@ class BagsGamesCIFAR(gym.Env):
         self.scale = scale
         self.chain = Chain(nrQueues=3, dataset='cifar')
 
-        # random state for benign query generation
+        # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
+        self.rnn = np.random.RandomState(60)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -112,11 +113,12 @@ class BagsGamesCIFAR(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
-        # if self.resets < 5: print("Start:", startLabel, "| Wanted:", originLabel)
+        # print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
+        # print(self.gap)
         self.dist = self.gap
         # Distance between successive steps
         self.diff = np.float32(0.0)
@@ -590,7 +592,7 @@ class BagsGamesCIFAR(gym.Env):
         nr = self.rn.randint(*self.indices)
         
         mu, sigma = 0, 0.01 # mean and standard deviation
-        s = np.random.normal(mu, sigma, self.dim*self.dim)
+        s = self.rnn.normal(mu, sigma, self.dim*self.dim)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(self.dim,self.dim).astype('float32')
         # print(s.shape)

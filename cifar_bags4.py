@@ -100,10 +100,6 @@ def objective(trial):
     done = False
     curr, nxt = 1, 0
     n_steps = 0
-      
-                    
-    print(threading.active_count())
-    print(threading.enumerate())
     
     for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train

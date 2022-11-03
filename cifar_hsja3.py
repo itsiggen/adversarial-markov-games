@@ -13,12 +13,13 @@ from envs.hsja_games_cifar import HsjaGamesCIFAR
 from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+transform = transforms.ToTensor()
+dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
 
 def objective(trial):
     
-    adaptive = 1 # adv adaptive, plus stateful defense 
+    adaptive = 1 # adv adaptive, plus stateful defense
+    vanilla = True
     ratio = 0.5
     stt = 1 # adversary is learning
     cont = 0
@@ -27,14 +28,14 @@ def objective(trial):
     seed = 2
     
     eval_steps = 5000
-    steps = trial.suggest_categorical('steps', [600,1000,2500])
+    steps = trial.suggest_categorical('steps', [600,1000,2000,3000])
     buffer = 1024
-    batch = 32
-    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
+    batch = trial.suggest_categorical('batch', [32,64,128])
+    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
-    radv = trial.suggest_categorical('reward', [1,2,3,4,5])
+    radv = trial.suggest_categorical('reward', [2,3,4,5])
     ts = trial.suggest_categorical('ts', [1e6,2e6])
 
 
@@ -43,6 +44,7 @@ def objective(trial):
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
+                   vanilla=vanilla,
                    dataset=dataset,
                    train=False,
                    cont=cont,
@@ -150,7 +152,7 @@ def objective(trial):
                 
     benign = RandomAgent(env=envv)
         
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=30)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=15)
     # envv.gstates.save("mods/data/hsja4eval_" + str(trial.number) + ".csv")
     
     res = [mean_radv, std_radv, mean_eps, start_eps, mean_acc]
@@ -175,6 +177,7 @@ def reset():
 def test(num, rew):
     eval_steps = 5000
     adaptive = 1
+    vanilla = True
     defended = True
     ratio = 0.5
     cont = 0
@@ -186,6 +189,7 @@ def test(num, rew):
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
+                    vanilla=vanilla,
                     dataset=dataset,
                     defended=defended,
                     cont=cont,
@@ -224,14 +228,14 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("5"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=50, n_jobs=-1, gc_after_trial=True)
+        study.optimize(objective, n_trials=20, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
     # train(args)

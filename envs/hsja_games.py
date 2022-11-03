@@ -62,8 +62,10 @@ class HsjaGames(gym.Env):
         # for plotting game states
         self.gstates = GameStates()
         self.contrasts = Contrasts()
-        # random state for benign query generation
+        
+        # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
+        self.rnn = np.random.RandomState(60)
         # emb = EmbeddingNet()
 
         # Observation space
@@ -826,7 +828,7 @@ class HsjaGames(gym.Env):
 
         # mu, sigma = 0, action # mean and standard deviation
         mu, sigma = 0, 0.1 # mean and standard deviation
-        s = np.random.normal(mu, sigma, 28*28)
+        s = self.rnn.normal(mu, sigma, 28*28)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
         s = s.reshape(28,28).astype('float32')
         # print(s.shape)
