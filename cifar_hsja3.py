@@ -28,17 +28,18 @@ def objective(trial):
     seed = 2
     
     eval_steps = 5000
-    steps = trial.suggest_categorical('steps', [600,1000,1500,3000])
-    buffer = 1024
-    batch = trial.suggest_categorical('batch', [32,64])
+    steps = trial.suggest_categorical('steps', [600,1000,3000,5000])
+    buffer = trial.suggest_categorical('buffer', [64,128,256])
+    batch = trial.suggest_categorical('batch', [16,32])
+    # batch = 32
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
     scale = trial.suggest_categorical('scale', [1,2,4,8])
     # scale = 8
-    radv = trial.suggest_categorical('reward', [6,7])
-    ts = trial.suggest_categorical('ts', [1e5,1e6,5e6])
+    radv = trial.suggest_categorical('reward', [2,3,6,7])
+    ts = trial.suggest_categorical('ts', [1e6,5e6])
 
 
     # Create environment
@@ -48,6 +49,7 @@ def objective(trial):
                    adaptive=adaptive,
                    vanilla=vanilla,
                    dataset=dataset,
+                   scale=scale,
                    train=False,
                    cont=cont,
                    rint=5,
@@ -141,6 +143,7 @@ def objective(trial):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     cont=cont,
@@ -169,6 +172,7 @@ def check_full(agents, stt):
             # print(i, "agent training")
             agents[i].close_buffer()
             if stt == i or stt == 2:
+                # print(agents[i].agent)
                 agents[i].train()
             agents[i].reset_buffer()
 
@@ -176,7 +180,7 @@ def reset():
     return False, 1, 0, 0
 
 
-def test(num, rew):
+def test(num, rew, scale):
     eval_steps = 5000
     adaptive = 1
     vanilla = True
@@ -193,6 +197,7 @@ def test(num, rew):
                     adaptive=adaptive,
                     vanilla=vanilla,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     cont=cont,
                     train=False,

@@ -22,8 +22,10 @@ def objective(trial):
     eval_steps = 5000
     steps = trial.suggest_categorical('steps', [1000,3000,5000])
     arch = trial.suggest_categorical('architecture', [32,64,128])
-    buffer = trial.suggest_categorical('buffer', [256,1024,2048])
-    batch = trial.suggest_categorical('batch', [32,64,128])
+    # buffer = trial.suggest_categorical('buffer', [256,1024,2048])
+    buffer = 64
+    # batch = trial.suggest_categorical('batch', [32,64,128])
+    batch = 32
     lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001,0.00005])
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
