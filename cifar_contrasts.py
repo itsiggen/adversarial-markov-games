@@ -30,15 +30,16 @@ def reset():
     return False, 1, 0, 0
 
     
-adaptive = 2 # int adaptive 
+adaptive = 0
 ratio = 0.5
-defended = True
+defended = False
+cont = 0
 seed = 2
 
 steps = 1000
 lr = 0.001
 buffer = 2048
-batch = 32
+batch = 64
 epochs = 20
 gamma = 0.99
 ent_coef = 0
@@ -47,7 +48,7 @@ que = True
 radv = 1
 rint = 5
 inter = 1
-ts = 2e4
+ts = 25000
 
 # Create environment
 env = gym.make("HsjaGamesCIFAR-v0",
@@ -55,6 +56,7 @@ env = gym.make("HsjaGamesCIFAR-v0",
                ratio_benign=ratio,
                adaptive=adaptive,
                dataset=dataset,
+               cont=cont,
                train=que,
                rint=rint,
                radv=radv,

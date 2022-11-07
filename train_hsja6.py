@@ -1,22 +1,18 @@
 import argparse
 import gym
-import os
-import pandas as pd
 import numpy as np
 import optuna
 import gc
-import tracemalloc
 from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 from envs.hsja_games import HsjaGames
-from stable_baselines3.common.vec_env import VecNormalize
 # os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('data', train=False, transform=transform, download=True)
 
 # tracemalloc.start()
 
@@ -211,7 +207,7 @@ def test(num, inter, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    defended = False
+    defended = True
     cont = 2
     seed = 2
 

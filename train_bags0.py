@@ -11,7 +11,7 @@ from utils.evaluation import evaluate_policy
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """

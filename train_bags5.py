@@ -14,7 +14,7 @@ from envs.bags_games import BagsGames
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """

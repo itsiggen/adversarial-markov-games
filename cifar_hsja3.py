@@ -14,7 +14,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     
@@ -28,15 +28,17 @@ def objective(trial):
     seed = 2
     
     eval_steps = 5000
-    steps = trial.suggest_categorical('steps', [600,1000,2000,3000])
+    steps = trial.suggest_categorical('steps', [600,1000,1500,3000])
     buffer = 1024
-    batch = trial.suggest_categorical('batch', [32,64,128])
+    batch = trial.suggest_categorical('batch', [32,64])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
-    radv = trial.suggest_categorical('reward', [2,3,4,5])
-    ts = trial.suggest_categorical('ts', [1e6,2e6])
+    scale = trial.suggest_categorical('scale', [1,2,4,8])
+    # scale = 8
+    radv = trial.suggest_categorical('reward', [6,7])
+    ts = trial.suggest_categorical('ts', [1e5,1e6,5e6])
 
 
     # Create environment
@@ -87,7 +89,7 @@ def objective(trial):
     n_steps = 0
     rst = 1
         
-    for timestep in tqdm(range(total_timesteps), disable=False):
+    for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move

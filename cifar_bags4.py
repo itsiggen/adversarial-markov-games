@@ -15,7 +15,7 @@ from envs.bags_games_cifar import BagsGamesCIFAR
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """

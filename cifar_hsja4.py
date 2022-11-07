@@ -12,7 +12,7 @@ from envs.hsja_games_cifar import HsjaGamesCIFAR
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
     
 def objective(trial):
     """
@@ -29,25 +29,17 @@ def objective(trial):
     cont = 1 # contrastive model used
     seed = 2
     
-    # ts = trial.suggest_categorical('ts', [1e6,5e6])
     steps = trial.suggest_categorical('steps', [1000,2000,3200])
-    # steps = 1000
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
-    # buffer = trial.suggest_categorical('buffer', [512,1024,2048])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
-    # batch = 64
-    # epochs = trial.suggest_categorical('epochs', [20])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
-    # ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
     ent_coef = 0
     vf_coef = 0.5
-    # que = trial.suggest_categorical('que', [False,True])
     que = True
     rint = trial.suggest_categorical('rint', [2,5,8])
-    # rint = 1
-    ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
     radv = 1
     inter = 1
     

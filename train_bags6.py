@@ -33,17 +33,18 @@ def objective(trial):
     steps = trial.suggest_categorical('steps', [1000,2000,3000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     buffer = 2048
-    batch = trial.suggest_categorical('batch', [32,64,128])
+    # batch = trial.suggest_categorical('batch', [32,64,128])
+    batch = 64
     # epochs = trial.suggest_categorical('epochs', [20])
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    rint = trial.suggest_categorical('rint', [2,3,4,5])
-    scale = 20
+    rint = trial.suggest_categorical('rint', [3,4,5])
+    scale = 8
     radv = 1
     inter = 1
-    ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
     
     # Create environment
     env = gym.make("BagsGames-v0",
@@ -131,6 +132,7 @@ def objective(trial):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     rint=rint,
@@ -170,7 +172,7 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, inter, rew):
+def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
@@ -183,14 +185,14 @@ def test(num, inter, rew):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     rint=rew,
-                    radv=1,
-                    intercept=inter)
+                    radv=1,)
     
 
-    interceptor = RPPO.load("mods/games/bagsint_" + str(num) + ".pt", envv, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/bags6int_" + str(num) + ".pt", envv, "interceptor", seed)
     adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
@@ -218,15 +220,15 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("32"), type=str, help="Agent to load")
-    parser.add_argument('--inter', default=float(1), type=float, help="Intercept")
-    parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("3"), type=str, help="Agent to load")
+    parser.add_argument('--scale', default=float(8), type=float, help="Intercept")
+    parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=1, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.inter, args.rew)
+        mean_eps = test(args.load, args.scale, args.rew)
     # train(args)

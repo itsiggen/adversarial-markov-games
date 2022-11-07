@@ -11,7 +11,7 @@ from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """

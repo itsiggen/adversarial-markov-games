@@ -310,3 +310,82 @@ def evaluate_rtpolicy(
     # print([i[-1] for i in epsilons], start)
 
     return mean_reward_int, std_reward_int, mean_reward_adv, std_reward_adv, epsilons, iterations, mean_eps, start_eps, mean_acc
+
+def evaluate_tspolicy(
+    interceptor,
+    adversary,
+    benign,
+    env: Union[gym.Env, VecEnv],
+    act_size: int = 3,
+    n_eval_episodes: int = 10,
+    deterministic: bool = True,
+    callback: Optional[Callable] = None,
+    reward_threshold: Optional[float] = None,
+) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
+    """
+    Similar to evaluate_policy, but with dummy moves
+    """
+    if isinstance(env, VecEnv):
+        assert env.num_envs == 1, "You must pass only one environment when using this function"
+
+    episode_rewards, lengths, iterations, epsilons, start, acc = [], [], [], [], [], []
+    stlabel, orlabel = [], []
+
+    for i in tqdm(range(n_eval_episodes), disable=False):
+        # Avoid double reset, as VecEnv are reset automatically
+        if not isinstance(env, VecEnv) or i == 0:
+            obs = env.reset()
+        done, state = False, None
+        curr, nxt = 1, 0
+        # rst = 1
+        # agent_steps = [0,0,0]
+        epsilon = []
+        iters = []
+        while not done:
+            prev = curr
+            # action, state = agents[nxt].predict(obs, deterministic=deterministic)
+            # action = action[0]
+            # print(action)
+            # loading the model returns an extra dim, hence squeeze
+            if nxt == 0:
+                action = np.zeros(shape=(1,))
+            else:
+                action = np.zeros(shape=(act_size,))
+            
+            obs, reward, done, _info = env.step(action)
+            curr = _info["curr"]
+            nxt = _info["next"]
+
+            if curr == 0 and prev == 1:
+                epsilon.append(_info['epsilon'])
+                iters.append(_info['iterations'])
+                # correct = _info['correct']
+                # print(correct)
+                # print(env.iter, done)
+            if done:
+                # print(done)
+                # print('DONE', epsilon[-1])
+                gap = _info['gap']
+                correct = _info['correct']
+                stl = _info['start']
+                orl = _info['origin']
+                # print(correct)
+                curr, nxt = 1, 0
+        epsilons.append(epsilon)
+        iterations.append(iters)
+        start.append(gap)
+        # print(epsilon[-1] - gap)
+        acc.append(correct)
+        stlabel.append(stl)
+        orlabel.append(orl)
+    mean_reward_int = 0
+    std_reward_int = 0
+    mean_reward_adv = 0
+    std_reward_adv = 0
+    mean_acc = np.mean(acc)
+    mean_eps = np.mean([i[-1] for i in epsilons])
+    start_eps = start
+    # print(len(epsilons), mean_eps, start_eps)
+    # print([i[-1] for i in epsilons], start)
+
+    return mean_reward_int, std_reward_int, stlabel, orlabel, epsilons, acc, mean_eps, start_eps, mean_acc

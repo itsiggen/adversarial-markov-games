@@ -123,7 +123,7 @@ class HsjaGames(gym.Env):
     def scale_grad(self, v):
         # Gradient estimation steps from [-2,2] to [50,200]
         # return (((v + 2) / 4) * 250 + 50).astype(int)
-        return ((v + 2) / 4) + 0.25 # to [0.25,1.25]
+        return ((v + 2) / 4) + 0.25 # to [0.75,1.25]
 
     def scale_intercept(self, v):
         return ((v + 2) / 4) * self.intercept

@@ -119,13 +119,13 @@ class HsjaGamesCIFAR(gym.Env):
     
     def scale_step(self, v):
         # Jump step search from [-2,2] to [0.1,1.1]
-        return ((v + 2) / 4) + 0.1
+        return ((v + 2) / 4) + 0.101
     
     # try different num of grad
     def scale_grad(self, v):
         # Gradient estimation steps from [-2,2] to [50,200]
         # return (((v + 2) / 4) * 250 + 50).astype(int)
-        return ((v + 2) / 4) + 0.5 # to [0.5,1.5]
+        return ((v + 2) / 4) + 0.25 # to [0.25,1.25]
 
     def scale_intercept(self, v):
         return ((v + 2) / 4) * self.intercept
@@ -134,6 +134,7 @@ class HsjaGamesCIFAR(gym.Env):
         gc.collect()
         """ Initialize new HSJA attack
         """
+        self.steps = int(self.steps*self.rnn.uniform(0.7, 1.4))
         self.iter = 0           # num of attack queries
         self.reps = 0           # num of attack reps
         self.queries = 0        # num of benign queries
@@ -437,10 +438,10 @@ class HsjaGamesCIFAR(gym.Env):
         # print(np.around(np.asarray(probs), decimals=4))
         span = self.chain.checkQuery(query, probs)
         # trivial state for non-adaptive
-        if self.adaptive == 2 or self.adaptive == 3:
+        if self.adaptive == 2 or self.adaptive == 0:
             obs, cont = self.chain.getState(2)
             # Add to contrastive dataset
-            # self.contrasts.add(cont, label)
+            self.contrasts.add(cont, label)
             # print(cont.shape)
             with torch.no_grad():
                 # print(cont.shape)
@@ -558,7 +559,6 @@ class HsjaGamesCIFAR(gym.Env):
 
         self.rv = (self.perturbed - self.best_advs) / 2
 
-        self.avg_adv = []
         self.multipliers_list: List[ep.Tensor] = []
         
     def grad_query(self):
@@ -573,16 +573,13 @@ class HsjaGamesCIFAR(gym.Env):
     def grad_proceed(self):
         self.gsteps += 1
         if self.gsteps < self.action_grad:
-            self.avg_adv.append(1) if self.is_adv else self.avg_adv.append(0)
             self.multipliers_list.append(ep.ones(self.best_advs,1) if self.is_adv else -ep.ones(self.best_advs,1))
             return None, None
         else:
             # print('done')
-            self.avg_adv.append(1) if self.is_adv else self.avg_adv.append(0)
             self.multipliers_list.append(ep.ones(self.best_advs,1) if self.is_adv else -ep.ones(self.best_advs,1))
             multipliers = ep.stack(self.multipliers_list, 0)
             # print(multipliers)
-            
             
             vals = ep.where(
                 ep.abs(ep.mean(multipliers, axis=0, keepdims=True)) == 1,
@@ -705,22 +702,6 @@ class HsjaGamesCIFAR(gym.Env):
         if self.iter >= self.steps:
             reward = 2*(self.gap - self.dist)/self.gap
         return reward
-    
-    def reward6(self):
-        a = 2*np.mean(self.avg_adv)
-        a = 0 if a < 0.2 else a
-        if self.jsteps == 1:
-            b = 1
-        elif self.jsteps == 2:
-            b = 0.5
-        else:
-            b = 0
-        return a + b
-    
-    def reward7(self):
-        if self.iter >= self.steps:
-            reward = 2*(self.gap - self.dist)/self.gap
-        return reward + self.reward6()
 
     def reward_adv(self, reward_nr):
         reward = 0
@@ -784,14 +765,15 @@ class HsjaGamesCIFAR(gym.Env):
     
     def swap(self, span, action):
         # if self.curr == 0 or self.curr == 1:
-        #     print('ADV:', span, self.phase, self.iter)
+            # print('ADV:', span, self.curr)
         # if self.curr == 2:
         #     if min(span) < 0.01: self.tt += 1
         #     print('BEN:', span, self.tt, self.queries)
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
-            inn = min(span) > 0.01*self.intercept
+            # inn = min(span) > 0.01*self.intercept
+            inn = True
             # print(inn, self.curr)
         elif self.adaptive == 1:
             if self.vanilla:
