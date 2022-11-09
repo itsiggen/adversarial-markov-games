@@ -38,7 +38,7 @@ def objective(trial):
     ent_coef = 0
     scale = trial.suggest_categorical('scale', [1,2,4,8])
     # scale = 8
-    radv = trial.suggest_categorical('reward', [1,2,3,4,5,6,7])
+    radv = trial.suggest_categorical('reward', [1,2,3,4,5,6,7,8])
     ts = trial.suggest_categorical('ts', [5e5,1e6])
 
 

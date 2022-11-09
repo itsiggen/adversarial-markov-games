@@ -701,7 +701,7 @@ class HsjaGamesCIFAR(gym.Env):
         return reward
 
     def reward4(self):
-        reward = 5/self.dist
+        reward = 1/self.dist
         return reward
 
     def reward5(self):
@@ -724,36 +724,31 @@ class HsjaGamesCIFAR(gym.Env):
         return a + b
     
     def reward7(self):
-        if self.iter >= self.steps:
-            reward = 2*(self.gap - self.dist)/self.gap
-        return reward + self.reward6()
+        return self.reward1() + self.reward6()
+    
+    def reward8(self):
+        return self.reward5() + self.reward6()
 
     def reward_adv(self, reward_nr):
         reward = 0
         if self.first_adv:
-            # reward = 0
             self.first_adv = 0
         elif reward_nr == 1:
-            # R1
             reward = self.reward1()
         elif reward_nr == 2:
-            # R2
             reward = self.reward2()
         elif reward_nr == 3:
-            # R3
             reward = self.reward3()
         elif reward_nr == 4:
-            # R4
             reward = self.reward4()
         elif reward_nr == 5:
-            # R5
             reward = self.reward5()
         elif reward_nr == 6:
-            # R5
             reward = self.reward6()
         elif reward_nr == 7:
-            # R5
             reward = self.reward7()
+        elif reward_nr == 8:
+            reward = self.reward8()
 
         return np.reshape(reward, (1,))
 
