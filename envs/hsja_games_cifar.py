@@ -30,7 +30,7 @@ class HsjaGamesCIFAR(gym.Env):
         gamma: float = 1.0,
         defended = False,
         adaptive: int = 0,
-        vanilla = False,
+        vanilla = True,
         cont: int = 1,
         ratio_benign = 0.5,
         train = True,
@@ -563,7 +563,9 @@ class HsjaGamesCIFAR(gym.Env):
         
     def grad_query(self):
         # print(self.gsteps)
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(0).to(device))
+        # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(0).to(device))
+        cand = self.normalize(self.perturbed[self.gsteps].raw).unsqueeze(0)
+        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         # print(self.is_adv)
@@ -602,7 +604,9 @@ class HsjaGamesCIFAR(gym.Env):
 
     def jump_query(self):
         self.jcand = ep.clip(self.best_advs + self.jeps * self.grad, 0, 1)
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(0).to(device))
+        # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(0).to(device))
+        cand = self.normalize(self.jcand.raw).unsqueeze(0)
+        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.jsteps += 1
@@ -707,14 +711,16 @@ class HsjaGamesCIFAR(gym.Env):
         return reward
     
     def reward6(self):
-        a = 2*np.mean(self.avg_adv)
-        a = 0 if a < 0.2 else a
+        a = np.mean(self.avg_adv) - 0.5
+        a = 2*(0.5 - abs(a))
+        # a = 0 if a < 0.2 else a
         if self.jsteps == 1:
-            b = 1
-        elif self.jsteps == 2:
             b = 0.5
+        elif self.jsteps == 2:
+            b = 0.25
         else:
             b = 0
+        print(a,b)
         return a + b
     
     def reward7(self):
@@ -742,6 +748,12 @@ class HsjaGamesCIFAR(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
+        elif reward_nr == 6:
+            # R5
+            reward = self.reward6()
+        elif reward_nr == 7:
+            # R5
+            reward = self.reward7()
 
         return np.reshape(reward, (1,))
 
@@ -791,7 +803,10 @@ class HsjaGamesCIFAR(gym.Env):
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
-            inn = min(span) > 0.01*self.intercept
+            if self.vanilla:
+                inn = min(span) > 0.01*self.intercept
+            else:
+                inn = True
             # print(inn, self.curr)
         elif self.adaptive == 1:
             if self.vanilla:

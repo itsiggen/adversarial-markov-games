@@ -49,8 +49,8 @@ def objective(trial):
     rint = trial.suggest_categorical('rint', [2,4,5])
     radv = trial.suggest_categorical('radv', [1,3,5])
     inter = 1
-    # ts = trial.suggest_categorical('ts', [1e5,1e6])
-    ts = 1e5
+    ts = trial.suggest_categorical('ts', [1e5,5e5])
+    # ts = 1e5
     
     # {'steps': 1000, 'lr': 0.0001, 'rint': 5, 'radv': 1, 'ts': 1000000.0}
     
@@ -90,10 +90,10 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lra, # 0.00039
+                learning_rate=lra,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef, # 0.0001
+                ent_coef=ent_coef,
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,

@@ -19,8 +19,8 @@ dataset = datasets.CIFAR10('data', train=False, transform=transform, download=Tr
 def objective(trial):
     
     adaptive = 1 # adv adaptive, plus stateful defense
-    vanilla = True
     ratio = 0.5
+    vanilla = True
     stt = 1 # adversary is learning
     cont = 0
     inter = 1
@@ -29,8 +29,8 @@ def objective(trial):
     
     eval_steps = 5000
     steps = trial.suggest_categorical('steps', [600,1000,3000,5000])
-    buffer = trial.suggest_categorical('buffer', [64,128,256])
-    batch = trial.suggest_categorical('batch', [16,32])
+    buffer = trial.suggest_categorical('buffer', [256,512,1024])
+    batch = trial.suggest_categorical('batch', [32,64])
     # batch = 32
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
@@ -38,8 +38,8 @@ def objective(trial):
     ent_coef = 0
     scale = trial.suggest_categorical('scale', [1,2,4,8])
     # scale = 8
-    radv = trial.suggest_categorical('reward', [2,3,6,7])
-    ts = trial.suggest_categorical('ts', [1e6,5e6])
+    radv = trial.suggest_categorical('reward', [1,2,3,4,5,6,7])
+    ts = trial.suggest_categorical('ts', [5e5,1e6])
 
 
     # Create environment
@@ -47,10 +47,10 @@ def objective(trial):
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
-                   vanilla=vanilla,
                    dataset=dataset,
                    scale=scale,
                    train=False,
+                   vanilla=vanilla,
                    cont=cont,
                    rint=5,
                    radv=radv,
@@ -146,6 +146,7 @@ def objective(trial):
                     scale=scale,
                     defended=defended,
                     train=False,
+                    vanilla=vanilla,
                     cont=cont,
                     rint=5,
                     radv=radv,
@@ -242,7 +243,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=20, gc_after_trial=True)
+        study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
     # train(args)

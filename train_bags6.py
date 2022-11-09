@@ -185,11 +185,11 @@ def test(num, scale, rew):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
-                    scale=scale,
                     defended=defended,
+                    scale=scale,
                     train=False,
                     rint=rew,
-                    radv=1,)
+                    radv=1)
     
 
     interceptor = RPPO.load("mods/games/bags6int_" + str(num) + ".pt", envv, "interceptor", seed)
@@ -221,14 +221,14 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("3"), type=str, help="Agent to load")
+    parser.add_argument('--load', default=str("0"), type=str, help="Agent to load")
     parser.add_argument('--scale', default=float(8), type=float, help="Intercept")
     parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=1, gc_after_trial=True)
+        study.optimize(objective, n_trials=20, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.scale, args.rew)
     # train(args)

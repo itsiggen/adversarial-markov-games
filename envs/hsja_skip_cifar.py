@@ -332,6 +332,7 @@ class HsjaSkipCIFAR(gym.Env):
         for step in range(steps):
             # cand = self.normalize(perturbed[step])
             decision = self.is_adversarial(self.normalize(perturbed[step].raw).unsqueeze(0))
+            # print(decision)
             # decision = self.is_adversarial(ep.astensor(perturbed[step]).raw.unsqueeze(1))
             self.iter +=1
             multipliers_list.append(ep.ones(x_advs,1) if decision else -ep.ones(x_advs,1))

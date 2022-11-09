@@ -87,7 +87,7 @@ def objective(trial):
     n_steps = 0
     rst = 1
         
-    for timestep in tqdm(range(total_timesteps), disable=False):
+    for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("14"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")
     args = parser.parse_args()

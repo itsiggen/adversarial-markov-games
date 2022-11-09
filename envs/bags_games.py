@@ -9,9 +9,10 @@ from foolbox.tensorboard import TensorBoard
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
-from utils.queues import Chain, l2
+from utils.queues import Chain, l2, Contrasts
 import utils.pnoise as pn
 from utils.utils import get_is_adversarial
+from data.contrastive import EmbeddingNet
 from models.trainMNISTtorch import Net
 from collections import deque
 import math
@@ -28,6 +29,7 @@ class BagsGames(gym.Env):
         source_step: float = 1e-2,
         defended = False,
         adaptive: int = 0,
+        cont: int = 2,
         vanilla = False,
         ratio_benign = 0.5,
         train = True,
@@ -55,6 +57,8 @@ class BagsGames(gym.Env):
         self.scale = scale
         self.chain = Chain(nrQueues=3, dataset='mnist')
         
+        self.contrasts = Contrasts()
+        
         # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
         self.rnn = np.random.RandomState(60)
@@ -62,7 +66,7 @@ class BagsGames(gym.Env):
         # Observation space
         self.observation_spaces = spaces.Dict({
             'adversary': spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32),
-            'interceptor': spaces.Box(low=-1, high=1, shape=(77,), dtype=np.float32)
+            'interceptor': spaces.Box(low=-1, high=1, shape=(64,), dtype=np.float32)
             })
 
         # Actions space
@@ -79,6 +83,22 @@ class BagsGames(gym.Env):
         else:
             self.mode.load_state_dict(torch.load('./models/mnist_cnn.pt', map_location=device))
         self.mode.eval()
+        
+        # Load contrastive models for state
+        self.contrast_model = EmbeddingNet()
+        if cont == 1:
+            if defended:
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_v.pt', map_location=device))
+            else:
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_v.pt', map_location=device))
+        elif cont == 2:
+            if defended:
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_t.pt', map_location=device))
+            else:
+                self.contrast_model.load_state_dict(torch.load('models/contrasts/hsja_emb_t.pt', map_location=device))
+        elif cont == 0:
+            pass
+        self.contrast_model.eval()
 
         self.model = PyTorchModel(self.mode, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
@@ -402,8 +422,18 @@ class BagsGames(gym.Env):
         probs = torch.nn.functional.softmax(logits, dim=1)
         span = self.chain.checkQuery(query, probs)
         # TODO: try different states
-        obs = self.chain.retState()
-        obs = np.round(obs,2)
+        # obs = self.chain.retState()
+        # obs = np.round(obs,4)
+        if self.adaptive == 2 or self.adaptive == 3:
+            obs, cont = self.chain.getState(2)
+            # Add to contrastive dataset
+            # self.contrasts.add(cont, label)
+            # print(cont.shape)
+            with torch.no_grad():
+                obs = self.contrast_model(torch.unsqueeze(cont, dim=0)).detach().numpy()
+        else:
+            obs = np.zeros(shape=(64,))
+        
         self.obs_int_state = obs
         # origin = self.chain.getOriginQueue(1)
         # print(lastStep)
@@ -589,7 +619,10 @@ class BagsGames(gym.Env):
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
-            inn = min(span) > 0.05*self.intercept
+            if self.vanilla:
+                inn = True
+            else:
+                inn = min(span) > 0.05*self.intercept
         elif self.adaptive == 1:
             if self.vanilla:
                 inn = min(span) > 0.05*self.intercept

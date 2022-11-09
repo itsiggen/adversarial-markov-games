@@ -25,8 +25,8 @@ def objective(trial):
     
     eval_steps = 5000
     adaptive = 3 # both adaptive 
-    stt = 0 # interceptor is learning
     ratio = 0.5
+    stt = 2 # both agents are learning
     defended = False
     seed = 2
 
@@ -40,8 +40,8 @@ def objective(trial):
     ent_coef = 0
     vf_coef = 0.5
     scale = 8
-    rint = trial.suggest_categorical('rint', [2,4,5])
-    radv = trial.suggest_categorical('radv', [1,3,5])
+    rint = trial.suggest_categorical('rint', [2,3,4,5])
+    radv = trial.suggest_categorical('radv', [2,3,4,5])
     inter = 1
     ts = trial.suggest_categorical('ts', [5e5,1e6])
     
@@ -65,7 +65,7 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lr,
+                learning_rate=lri,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
                 ent_coef=ent_coef,
@@ -75,7 +75,20 @@ def objective(trial):
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
 
-    adversary = RPPO.load("mods/games/bags5adv_5.pt", env, "adversary", seed)
+    adversary = RPPO(policy="MlpPolicy",
+                env=env,
+                agent='adversary',
+                n_steps=buffer,
+                batch_size=batch,
+                n_epochs=epochs,
+                learning_rate=lra,
+                gamma=round(gamma,2),
+                tensorboard_log=None,
+                ent_coef=ent_coef, # 0.0001
+                vf_coef=vf_coef,
+                verbose=0,
+                seed=seed,
+                policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
 
     benign = RandomAgent(env=env)
       
@@ -121,8 +134,8 @@ def objective(trial):
     # Save the trained agents
     
     print("Saving models...")
-    interceptor.save("mods/games/bags6int_" + str(trial.number) + ".pt")
-    adversary.save("mods/games/bags6adv.pt")
+    interceptor.save("mods/games/bags7int_" + str(trial.number) + ".pt")
+    adversary.save("mods/games/bags7adv_" + str(trial.number) + ".pt")
 
     # Make evaluation env
     seed = 3
@@ -131,6 +144,7 @@ def objective(trial):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     rint=rint,
@@ -138,8 +152,8 @@ def objective(trial):
                     intercept=inter)
     
     # Load the trained agents
-    interceptor = RPPO.load("mods/games/bags6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/bags7int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/bags7adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 
@@ -170,7 +184,7 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, inter, rew):
+def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
@@ -183,11 +197,11 @@ def test(num, inter, rew):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     rint=rew,
-                    radv=1,
-                    intercept=inter)
+                    radv=1,)
     
 
     interceptor = RPPO.load("mods/games/bagsint_" + str(num) + ".pt", envv, "interceptor", seed)
@@ -225,8 +239,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
-        study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=1, gc_after_trial=True)
+        study = optuna.create_study(directions=['minimize', 'maximize'])
+        study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
         mean_eps, mean_acc = test(args.load, args.inter, args.rew)
     # train(args)
