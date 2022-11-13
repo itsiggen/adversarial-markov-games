@@ -17,6 +17,7 @@ from collections import deque, OrderedDict
 from models.trainCIFARtorch import resnet20
 import matplotlib.pyplot as plt
 import math
+import pandas as pd
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
@@ -31,6 +32,7 @@ class BagsSkipCIFAR(gym.Env):
         defended = False,
         nonadaptive = False,
         train = True,
+        test = False,
         rewarder = 1,
         scale = 5,
         dataset = None,
@@ -44,7 +46,10 @@ class BagsSkipCIFAR(gym.Env):
         self.source_step = source_step
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
+        self.train = train
+        self.test = test
         self.scale = scale
+        self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32)
@@ -87,10 +92,15 @@ class BagsSkipCIFAR(gym.Env):
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
         # if self.resets < 1: print("Start:", startLabel, "| Wanted:", originLabel)
+        # print("Start:", startLabel, "| Wanted:", originLabel)
         self.resets += 1
+        # if self.resets == 100:
+        #     df = pd.DataFrame(self.pairs)
+        #     df.to_csv('pairs.csv', index=False)
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
+        # print("Start:", startLabel, "| Wanted:", originLabel, "| Gap:", self.gap)
         self.dist = self.gap
         # print(self.dist)
         # Distance between successive steps
@@ -371,27 +381,28 @@ class BagsSkipCIFAR(gym.Env):
         return reward
 
     def get_pair(self):
-        startImgNr = random.randint(*self.indices)
-        originImgNr = random.randint(*self.indices)
-        
-        # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
-            originImgNr = random.randint(*self.indices)
-        
-        # Make sure starting and original images do not belong to the same class, and starting is correctly classified
-        while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
+        if self.test:
+            startImgNr = self.pairs[self.resets][0]
+            originImgNr = self.pairs[self.resets][1]
+        else:
             startImgNr = random.randint(*self.indices)
-        
+            originImgNr = random.randint(*self.indices)
+            
+            # Make sure original image is correctly classified by the model
+            while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
+                originImgNr = random.randint(*self.indices)
+            
+            # Make sure starting and original images do not belong to the same class, and starting is correctly classified
+            while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
+                or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
+                startImgNr = random.randint(*self.indices)
+            
         startImg = self.dataset[startImgNr][0].to(device)
         startLabel = self.dataset[startImgNr][1]
         
         originImg = self.dataset[originImgNr][0].to(device)
         originLabel = self.dataset[originImgNr][1]
         
-        # startImg = self.dataset[1][0]
-        # startLabel = self.dataset[1][1]
-        # originImg = self.dataset[3][0]
-        # originLabel = self.dataset[3][1]
-        
+        # self.pairs.append([startImgNr, originImgNr])
+    
         return startImg.squeeze(0).numpy(), startLabel, originImg.squeeze(0).numpy(), originLabel

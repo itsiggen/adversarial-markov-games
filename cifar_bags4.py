@@ -1,18 +1,14 @@
 import argparse
 import gym
 import os
-import gc
-import pandas as pd
 import numpy as np
 import optuna
-import threading
 from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rpolicy
 from envs.bags_games_cifar import BagsGamesCIFAR
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 transform = transforms.ToTensor()
 dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
@@ -36,15 +32,17 @@ def objective(trial):
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
-    epochs =20
-    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
+    epochs = 20
+    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    inter = trial.suggest_categorical('inter', [1,2])
+    # inter = trial.suggest_categorical('inter', [1,2])
+    inter = 1
     scale = 20
     rint = trial.suggest_categorical('rint', [2,3,4,5])
     radv = 1
     ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = 100
 
     # Create environment
     env = gym.make("BagsGamesCIFAR-v0",
@@ -144,6 +142,7 @@ def objective(trial):
                     dataset=dataset,
                     defended=defended,
                     train=False,
+                    scale=scale,
                     rint=rint,
                     radv=radv,
                     intercept=inter)
@@ -182,7 +181,7 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, inter, rew):
+def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 2 # int adaptive 
     ratio = 0.5
@@ -197,9 +196,10 @@ def test(num, inter, rew):
                     dataset=dataset,
                     defended=defended,
                     train=False,
+                    scale=scale,
                     rint=rew,
                     radv=1,
-                    intercept=inter)
+                    )
     
     # Load the trained agents
     interceptor = RPPO.load("mods/games/cbags4int_" + str(num) + ".pt" , envv, "interceptor", seed)
@@ -227,15 +227,15 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("2"), type=str, help="Model to load")
-    parser.add_argument('--inter', default=float(2), type=float, help="Intercept")
+    parser.add_argument('--scale', default=float(20), type=float, help="Scale")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=50, n_jobs=1, gc_after_trial=True)
+        study.optimize(objective, n_trials=30, n_jobs=1, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.inter, args.rew)
+        mean_eps, mean_acc = test(args.load, args.scale, args.rew)
     # train(args)

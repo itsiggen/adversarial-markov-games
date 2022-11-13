@@ -3,6 +3,7 @@ import numpy as np
 import gym
 import torch
 import random
+import pandas as pd
 from foolbox import PyTorchModel
 from foolbox.tensorboard import TensorBoard
 from foolbox.attacks.base import get_is_adversarial
@@ -31,6 +32,7 @@ class HsjaSkipCIFAR(gym.Env):
         nonadaptive = False,
         epsilon = 0.01,
         train = True,
+        test = False,
         rewarder = 1,
         scale = 200,
         perlin = 0,
@@ -45,12 +47,14 @@ class HsjaSkipCIFAR(gym.Env):
         self.init_grad_evals = init_gradient_eval_steps
         self.max_grad_evals = max_gradient_eval_steps
         self.gamma = gamma
+        self.train = train
+        self.test = test
         self.epsilon = epsilon
         self.nonadaptive = nonadaptive
         self.rewarder = rewarder
         self.scale = scale
         self.perlin = perlin
-        self.tensorboard = tensorboard
+        self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
 
         # Actions space
         self.action_space = spaces.Box(low=-2, high=2, shape=(3,), dtype=np.float32)
@@ -87,7 +91,6 @@ class HsjaSkipCIFAR(gym.Env):
         # Initialize new targeted attack 
         self.iter = 0
         self.reps = 0
-        self.tb = TensorBoard(logdir=self.tensorboard)
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         while np.isnan(self.starting_point).any() or np.isnan(self.wanted_point).any():
             self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
@@ -97,6 +100,7 @@ class HsjaSkipCIFAR(gym.Env):
         self.criterion = TargetedMisclassification(torch.tensor([startLabel]))
         # Distance between starting and origin point / current best adv
         self.gap = l2(self.starting_point, self.wanted_point)
+        # print("Start:", startLabel, "| Wanted:", originLabel, "| Gap:", self.gap)
         self.dist = self.gap
         # self.goal = self.gap * self.epsilon
         # Distance between successive steps
@@ -226,7 +230,6 @@ class HsjaSkipCIFAR(gym.Env):
         # TODO: potentially reward shorter episodes       
         # self.converged = self.dist < self.goal
         if self.iter >= self.steps:
-            self.tb.close()
             self.done = True
         
         # if self.done:
@@ -475,31 +478,31 @@ class HsjaSkipCIFAR(gym.Env):
         elif reward_nr == 5:
             # R5
             reward = self.reward5()
-        self.tb.scalar("reward", torch.tensor([reward]), self.iter)
         return reward
-
+    
     def get_pair(self):
-        startImgNr = random.randint(*self.indices)
-        originImgNr = random.randint(*self.indices)
-        
-        # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
-            originImgNr = random.randint(*self.indices)
-        
-        # Make sure starting and original images do not belong to the same class, and starting is correctly classified
-        while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
+        if self.test:
+            startImgNr = self.pairs[self.resets][0]
+            originImgNr = self.pairs[self.resets][1]
+        else:
             startImgNr = random.randint(*self.indices)
-        
+            originImgNr = random.randint(*self.indices)
+            
+            # Make sure original image is correctly classified by the model
+            while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
+                originImgNr = random.randint(*self.indices)
+            
+            # Make sure starting and original images do not belong to the same class, and starting is correctly classified
+            while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
+                or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
+                startImgNr = random.randint(*self.indices)
+            
         startImg = self.dataset[startImgNr][0].to(device)
         startLabel = self.dataset[startImgNr][1]
         
         originImg = self.dataset[originImgNr][0].to(device)
         originLabel = self.dataset[originImgNr][1]
-               
-        # startImg = self.dataset[1][0]
-        # startLabel = self.dataset[1][1]
-        # originImg = self.dataset[3][0]
-        # originLabel = self.dataset[3][1]
         
+        # self.pairs.append([startImgNr, originImgNr])
+    
         return startImg, startLabel, originImg, originLabel

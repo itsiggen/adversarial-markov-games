@@ -16,7 +16,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 # os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
 
 from pyinstrument import Profiler
 
@@ -30,9 +30,8 @@ def objective(trial):
     eval_steps = 5000
     adaptive = 3 # both adaptive 
     ratio = 0.5
-    stt = 2 # both agents are learning
     cont = 2 # contrastive model used
-    defended = False
+    defended = True
     seed = 2
 
     steps = trial.suggest_categorical('steps', [1000,2500,5000])
@@ -49,8 +48,8 @@ def objective(trial):
     rint = trial.suggest_categorical('rint', [2,4,5])
     radv = trial.suggest_categorical('radv', [1,3,5])
     inter = 1
-    ts = trial.suggest_categorical('ts', [1e5,5e5])
-    # ts = 1e5
+    # ts = trial.suggest_categorical('ts', [1e6,2e6])
+    ts = 1e6
     
     # {'steps': 1000, 'lr': 0.0001, 'rint': 5, 'radv': 1, 'ts': 1000000.0}
     
@@ -90,10 +89,10 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lra,
+                learning_rate=lra, # 0.00039
                 gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef,
+                ent_coef=ent_coef, # 0.0001
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
@@ -114,7 +113,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents, stt)
+        check_full(agents)
         # Store previous move
         prev = curr
         # next agent moves
@@ -163,8 +162,8 @@ def objective(trial):
     # env.contrasts.save()
     
     print("Saving models...")
-    interceptor.save("mods/games/hsja7int_" + str(trial.number) + ".pt")
-    adversary.save("mods/games/hsja7adv_" + str(trial.number) + ".pt")
+    interceptor.save("mods/games/hsjaa7int_" + str(trial.number) + ".pt")
+    adversary.save("mods/games/hsjaa7adv_" + str(trial.number) + ".pt")
 
     seed = 3
     envv = gym.make("HsjaGames-v0",
@@ -181,8 +180,8 @@ def objective(trial):
     
     # Load the trained agents
 
-    interceptor = RPPO.load("mods/games/hsja7int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/hsja7adv_" + str(trial.number) + ".pt", envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/hsjaa7int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/hsjaa7adv_" + str(trial.number) + ".pt", envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 
@@ -201,14 +200,13 @@ def objective(trial):
     
     return mean_eps, mean_acc
     
-def check_full(agents, stt):
+def check_full(agents):
     for i in range(2):
+        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
-        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            if stt == i or stt == 2:
-                agents[i].train()
+            agents[i].train()
             agents[i].reset_buffer()
 
 def reset():
@@ -218,7 +216,7 @@ def test(num, r1, r2):
     eval_steps = 5000
     adaptive = 3 # both adaptive 
     ratio = 0.5
-    defended = False
+    defended = True
     cont = 2
     seed = 2
 
@@ -234,8 +232,8 @@ def test(num, r1, r2):
                     rint=r1,
                     radv=r2)
 
-    interceptor = RPPO.load("mods/games/hsja7int_" + str(num) + ".pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/hsja7adv_" + str(num) + ".pt", envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/hsjaa7int_" + str(num) + ".pt", envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/hsjaa7adv_" + str(num) + ".pt", envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
     
@@ -261,15 +259,15 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--num', default=str("3"), type=str, help="Agents to load")
-    parser.add_argument('--r1', default=int(4), type=bool, help="Int reward used")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--num', default=str("10"), type=str, help="Agents to load")
+    parser.add_argument('--r1', default=int(2), type=bool, help="Int reward used")
     parser.add_argument('--r2', default=int(5), type=bool, help="Adv reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['minimize', 'maximize'])
-        study.optimize(objective, n_trials=50, gc_after_trial=True)
+        study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
         # profiler = Profiler()
         # profiler.start()

@@ -88,7 +88,7 @@ def objective(trial):
 def test(num, rew):
     eval_steps = 5000
     defended = False
-    nona = True
+    nona = False
     seed = 2
 
     # Make evaluation env
@@ -98,7 +98,8 @@ def test(num, rew):
                     defended=defended,
                     rewarder=rew,
                     nonadaptive=nona,
-                    train=False)
+                    train=False,
+                    test=True)
         
     model = PPO.load("mods/cifarhsja_" + str(num) + "_model.pt", seed=seed)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
@@ -123,14 +124,14 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("5"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=50, n_jobs=-1, gc_after_trial=True)
+        study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
     # train(args)

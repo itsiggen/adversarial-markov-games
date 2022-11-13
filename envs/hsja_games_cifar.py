@@ -3,6 +3,7 @@ import numpy as np
 import gym
 import torch
 import random
+import pandas as pd
 from foolbox import PyTorchModel
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
@@ -34,6 +35,7 @@ class HsjaGamesCIFAR(gym.Env):
         cont: int = 1,
         ratio_benign = 0.5,
         train = True,
+        test = False,
         rint = 1,
         radv = 1,
         scale = 2,
@@ -52,12 +54,14 @@ class HsjaGamesCIFAR(gym.Env):
         self.vanilla = vanilla,
         self.ratio_benign = ratio_benign
         self.train = train
+        self.test = test
         self.rint = rint
         self.radv = radv
         self.scale = scale
         self.intercept = intercept
         self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
+        self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
         
         self.tt = 0
         
@@ -128,7 +132,8 @@ class HsjaGamesCIFAR(gym.Env):
         return ((v + 2) / 4) + 0.5 # to [0.5,1.5]
 
     def scale_intercept(self, v):
-        return ((v + 2) / 4) * self.intercept
+        # return ((v + 2) / 4) * self.intercept
+        return (pow((v + 2), 2) / 16) * self.intercept
     
     def reset(self):
         gc.collect()
@@ -642,45 +647,41 @@ class HsjaGamesCIFAR(gym.Env):
                 else:
                     r += 2
             elif reward_nr == 3:
-                # Reward keeping average dist of queries close to starting point
-                # r = 1 / 10*(l2(self.starting_point.detach().numpy(), cand) / self.gap)
-                # r = max(r,1)
-                # print(self.imp)
-                r = -2 if self.imp else 0
+                # penalty/bonus on binary queries
+                r = -2 if self.imp else 2
             elif reward_nr == 4:
-                # reward small gains
-                # r = 1 / 10*self.gain
                 # reward interception
-                # print(self.rew_adv)
-                r = -1 if self.rew_adv else 1
+                # r = -1 if self.rew_adv else 1
+                if self.rew_adv:
+                    r = max(2*(self.act - self.rad), -1)
+                else:
+                    r = max((self.act - self.rad), 0)
             elif reward_nr == 5:
                 # reward based on the gap between intercept and smallest span
                 r = self.act - min(self.intercept, self.rad)
                 # print(r, 'sad')
-            # elif reward_nr == 6:
-            #     # reward intercepting jump and binary steps
-            #     r = 0
-            #     if self.phase == 1 or self.phase == 2:
-            #         r = self.act - min(self.intercept, self.rad)
             elif reward_nr == 6:
                 # reward intercepting jump and binary steps
-                r = 0
-                if self.phase == 1 or self.phase == 2:
-                    r = np.sign(self.act - min(self.intercept, self.rad))*1
+                # r = 0
+                # if self.phase == 1 or self.phase == 2:
+                #     r = np.sign(self.act - min(self.intercept, self.rad))*1
+                # reward interception proportionally to difficulty
+                if self.rew_adv:
+                    r = max(2*(self.act - self.rad), -1)
+                else:
+                    r = 1 - max((self.act - self.rad), 0)
             elif reward_nr == 7:
                 # reward when intercepting queries that are actually adversarial
-                r = 0
-                if self.is_det: r = 1
+                r = max((self.act - self.rad), 0) if self.is_det else 0
             elif reward_nr == 8:
-                # reward when intercepting queries that are actually adversarial proportional to the gap
-                r = 0
-                if self.is_det:
-                    r = self.act - self.rad
+                # reward when intercepting queries that are actually adversarial
+                r = 1 - max((self.act - self.rad), 0) if self.is_det else max(2*(self.act - self.rad), -1)
                 
         elif self.past == 2:
             # print(self.check_bn)
             # r = 0.5 if self.check_bn else -0.5
-            r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
+            # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
+            r = 1 - self.act if self.check_bn else -1
             # r = 0.5 if self.check_bn else -0.5
             # print(r, 'jkh')
             
@@ -720,7 +721,7 @@ class HsjaGamesCIFAR(gym.Env):
             b = 0.25
         else:
             b = 0
-        print(a,b)
+        # print(a,b)
         return a + b
     
     def reward7(self):
@@ -753,29 +754,30 @@ class HsjaGamesCIFAR(gym.Env):
         return np.reshape(reward, (1,))
 
     def get_pair(self):
-        startImgNr = random.randint(*self.indices)
-        originImgNr = random.randint(*self.indices)
-        
-        # Make sure original image is correctly classified by the model
-        while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).to(device).unsqueeze(0))).cpu().detach().numpy() == self.dataset[originImgNr][1]:
-            originImgNr = random.randint(*self.indices)
-        
-        # Make sure starting and original images do not belong to the same class, and starting is correctly classified
-        while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
-            or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).to(device).unsqueeze(0))).cpu().detach().numpy() == self.dataset[startImgNr][1]:
+        if self.test:
+            startImgNr = self.pairs[self.resets][0]
+            originImgNr = self.pairs[self.resets][1]
+        else:
             startImgNr = random.randint(*self.indices)
-        
+            originImgNr = random.randint(*self.indices)
+            
+            # Make sure original image is correctly classified by the model
+            while not ep.argmax(self.model(self.normalize(self.dataset[originImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[originImgNr][1]:
+                originImgNr = random.randint(*self.indices)
+            
+            # Make sure starting and original images do not belong to the same class, and starting is correctly classified
+            while self.dataset[startImgNr][1] == self.dataset[originImgNr][1] \
+                or not ep.argmax(self.model(self.normalize(self.dataset[startImgNr][0]).unsqueeze(0))).detach().numpy() == self.dataset[startImgNr][1]:
+                startImgNr = random.randint(*self.indices)
+            
         startImg = self.dataset[startImgNr][0].to(device)
         startLabel = self.dataset[startImgNr][1]
         
         originImg = self.dataset[originImgNr][0].to(device)
         originLabel = self.dataset[originImgNr][1]
-               
-        # startImg = self.dataset[1][0]
-        # startLabel = self.dataset[1][1]
-        # originImg = self.dataset[3][0]
-        # originLabel = self.dataset[3][1]
         
+        # self.pairs.append([startImgNr, originImgNr])
+    
         return startImg, startLabel, originImg, originLabel
 
     def project(self, originals, perturbed, epsilons):
@@ -799,13 +801,13 @@ class HsjaGamesCIFAR(gym.Env):
             action = action[0]
         if self.adaptive == 0:
             if self.vanilla:
-                inn = min(span) > 0.01*self.intercept
+                inn = min(span) > 0.001*self.intercept
             else:
                 inn = True
             # print(inn, self.curr)
         elif self.adaptive == 1:
             if self.vanilla:
-                inn = min(span) > 0.01*self.intercept
+                inn = min(span) > 0.001*self.intercept
             else:
                 inn = True
         else:

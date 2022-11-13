@@ -35,7 +35,7 @@ def objective(trial):
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
-    epochs =20
+    epochs = 20
     gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5

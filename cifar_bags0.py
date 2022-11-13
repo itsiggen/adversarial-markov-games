@@ -19,10 +19,10 @@ def objective(trial):
     print('Training CBAGS-1: AA-ND..')   
     
     eval_steps = 5000
+    steps = trial.suggest_categorical('steps', [1000,2000,3000])
     arch = trial.suggest_categorical('architecture', [32,64,128])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
-    steps = trial.suggest_categorical('steps', [1000,2000,3000])
     lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001,0.00005])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
@@ -104,7 +104,8 @@ def test(num, rew, scale):
                     rewarder=rew,
                     nonadaptive=nona,
                     scale=scale,
-                    train=False)
+                    train=False,
+                    test=True)
         
     model = PPO.load("mods/cifarbags_" + str(num) + "_model.pt", seed=seed)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
