@@ -63,11 +63,13 @@ class HsjaGamesCIFAR(gym.Env):
         self.contrasts = Contrasts()
         self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
         
-        self.tt = 0
+        # self.tt = 0
         
         # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
         self.rnn = np.random.RandomState(60)
+        # random state for query draw
+        self.rdr = np.random.RandomState(26)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -81,7 +83,7 @@ class HsjaGamesCIFAR(gym.Env):
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
-        # Load CIFAR pytorch Resnet20 model -- 92.1/87.74 acc -- 88.25/ acc adversarially trained
+        # Load CIFAR pytorch Resnet20 model -- 92.1/ acc -- 88.25/ acc adversarially trained
         self.dataset = dataset
 
         model = resnet20()
@@ -300,7 +302,7 @@ class HsjaGamesCIFAR(gym.Env):
         # decide next query; benign with P = ratio_benign
         if self.repdone:
             nxt = 1
-        elif np.random.random() < self.ratio_benign and self.iter > 5:
+        elif self.rdr.random() < self.ratio_benign and self.iter > 5:
         # elif self.iter % 3 == 0 and self.past !=2 and self.iter > 5:
             # print(self.iter)
             nxt = 2
@@ -365,8 +367,8 @@ class HsjaGamesCIFAR(gym.Env):
         if self.adaptive == 0 or self.adaptive == 2:
             self.action_delta = self.select_delta(self.dist)
             # self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
-            # self.action_grad = int(num_grad/3) if self.train else num_grad
-            self.action_grad = num_grad
+            self.action_grad = int(num_grad/3) if self.train else num_grad
+            # self.action_grad = num_grad
             # self.action_grad = int(num_grad/10)
             # self.action_grad = num_grad
             self.action_step = 1/math.sqrt(self.reps)
@@ -661,15 +663,15 @@ class HsjaGamesCIFAR(gym.Env):
                 r = self.act - min(self.intercept, self.rad)
                 # print(r, 'sad')
             elif reward_nr == 6:
-                # reward intercepting jump and binary steps
-                # r = 0
-                # if self.phase == 1 or self.phase == 2:
-                #     r = np.sign(self.act - min(self.intercept, self.rad))*1
-                # reward interception proportionally to difficulty
+                # reward interception + penalty/bonus on binary queries
                 if self.rew_adv:
                     r = max(2*(self.act - self.rad), -1)
                 else:
-                    r = 1 - max((self.act - self.rad), 0)
+                    r = max((self.act - self.rad), 0)
+                if self.imp:
+                    r -= 2
+                else:
+                    r += 2
             elif reward_nr == 7:
                 # reward when intercepting queries that are actually adversarial
                 r = max((self.act - self.rad), 0) if self.is_det else 0
@@ -793,21 +795,22 @@ class HsjaGamesCIFAR(gym.Env):
     
     def swap(self, span, action):
         # if self.curr == 0 or self.curr == 1:
-        #     print('ADV:', span, self.phase, self.iter)
+        #     if action[0] < min(span):
+        #         print('ADV:', min(span), action[0], self.phase, self.iter)
         # if self.curr == 2:
-        #     if min(span) < 0.01: self.tt += 1
-        #     print('BEN:', span, self.tt, self.queries)
+        #     # if min(span) < 0.01: self.tt += 1
+        #     print('BEN:', span, action, self.queries)
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
             if self.vanilla:
-                inn = min(span) > 0.001*self.intercept
+                inn = min(span) > 0.01*self.intercept
             else:
                 inn = True
             # print(inn, self.curr)
         elif self.adaptive == 1:
             if self.vanilla:
-                inn = min(span) > 0.001*self.intercept
+                inn = min(span) > 0.01*self.intercept
             else:
                 inn = True
         else:

@@ -62,6 +62,8 @@ class BagsGamesCIFAR(gym.Env):
         # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
         self.rnn = np.random.RandomState(60)
+        # random state for query draw
+        self.rdr = np.random.RandomState(26)
 
         # Observation space
         self.observation_spaces = spaces.Dict({
@@ -205,7 +207,7 @@ class BagsGamesCIFAR(gym.Env):
             # Int responds to adv or ben
             self.past = self.curr
             obs, r, done = self.step_int(action)
-            self.roll_next()
+            self.decide_next()
             info = self.get_info()
             # return obs, r, done, info, self.curr, self.next
             return obs, r, done, info
@@ -496,12 +498,12 @@ class BagsGamesCIFAR(gym.Env):
         return np.reshape(r, (1,))
 
     def reward1(self):
-        if self.gain > 0:
-            reward = (self.gain / self.gap) * self.reward_mult
-        else:
-            reward = 0
-        return reward
-
+        # if self.gain > 0:
+        #     reward = (self.gain / self.gap) * self.reward_mult
+        # else:
+        #     reward = 0   
+        return (self.iter ** 0.25) * np.mean(self.stats_is_adv)
+    
     def reward2(self):
         if self.gain > 0:
             reward = (self.gain / self.gap) / (self.reward_mult + 1)
@@ -520,35 +522,29 @@ class BagsGamesCIFAR(gym.Env):
         return reward
 
     def reward5(self):
-        reward = 0
-        if self.iter >= self.steps:
-            reward = abs(math.log(self.dist / self.gap))
-        return reward
+        # reward = 0
+        # if self.iter >= self.steps:
+        #     reward = abs(math.log(self.dist / self.gap))
+        return self.reward1() + self.reward4()
     
     def reward_adv(self, reward_nr):
         reward = 0
         if reward_nr == 1:
-            # R1
             reward = self.reward1()
         elif reward_nr == 2:
-            # R2
             reward = self.reward2()
         elif reward_nr == 3:
-            # R3
             reward = self.reward3()
         elif reward_nr == 4:
-            # R4
             reward = self.reward4()
         elif reward_nr == 5:
-            # R5
             reward = self.reward5()
-        # print("rew", reward_nr, reward)
 
         return np.reshape(reward, (1,))
     
-    def roll_next(self):
+    def decide_next(self):
         # decide next query; benign with P = ratio_benign
-        if np.random.random() < self.ratio_benign and self.iter > 5:
+        if self.rdr.random() < self.ratio_benign and self.iter > 5:
             self.next = 2
         else:
             self.next = 1

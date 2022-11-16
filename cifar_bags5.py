@@ -28,7 +28,7 @@ def objective(trial):
     seed = 2
     logdir = "./logs/"
     
-    steps = trial.suggest_categorical('steps', [1000,2500,4000])
+    steps = trial.suggest_categorical('steps', [600,1000,2000,3000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
@@ -36,12 +36,12 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    scale = trial.suggest_categorical('scale', [5,8,10,20])
+    scale = trial.suggest_categorical('scale', [2,3,5,8,10])
     inter = 1
-    radv = trial.suggest_categorical('radv', [2,3,4])
+    radv = trial.suggest_categorical('radv', [1,2,3,4,5])
     # radv = 3
     rint = 3
-    ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
 
     # Create environment
     env = gym.make("BagsGamesCIFAR-v0",
@@ -137,7 +137,7 @@ def objective(trial):
 
     
     interceptor = RPPO.load("mods/games/cbags4int_2.pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bags5adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
+    adversary = RPPO.load("mods/games/cbags5adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 

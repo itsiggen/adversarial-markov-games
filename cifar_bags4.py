@@ -196,6 +196,7 @@ def test(num, scale, rew):
                     dataset=dataset,
                     defended=defended,
                     train=False,
+                    test=True,
                     scale=scale,
                     rint=rew,
                     radv=1,

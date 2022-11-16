@@ -41,7 +41,7 @@ def objective(trial):
     vf_coef = 0.5
     scale = trial.suggest_categorical('scale', [3,5,8,10,20])
     inter = 1
-    radv = trial.suggest_categorical('radv', [2,3,4])
+    radv = trial.suggest_categorical('radv', [1,2,3,4,5])
     # radv = 3
     rint = 3
     ts = trial.suggest_categorical('ts', [1e6,2e6])

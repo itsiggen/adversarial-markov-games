@@ -92,7 +92,7 @@ def objective(trial):
 
 def test(num, rew, scale):
     eval_steps = 5000
-    defended = False
+    defended = True
     nona = False
     seed = 2
 
