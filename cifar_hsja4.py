@@ -193,7 +193,7 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, inter, rew):
+def test(num, rew):
     eval_steps = 5000
     adaptive = 2 # int adaptive 
     ratio = 0.5
@@ -212,8 +212,7 @@ def test(num, inter, rew):
                     train=False,
                     test=True,
                     rint=rew,
-                    radv=1,
-                    intercept=inter)
+                    radv=1,)
 
     interceptor = RPPO.load("mods/games/chsja4int_" + str(num) + ".pt" , envv, "interceptor", seed)
     adversary = RPPO.load("mods/games/chsja4adv.pt", envv, "adversary", seed)
@@ -247,14 +246,13 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("0"), type=str, help="Model to load")
-    parser.add_argument('--inter', default=float(1), type=float, help="Intercept")
-    parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
+    parser.add_argument('--load', default=str("24"), type=str, help="Model to load")
+    parser.add_argument('--rew', default=int(6), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.inter, args.rew)
+        mean_eps, mean_acc = test(args.load, args.rew)
     # train(args)

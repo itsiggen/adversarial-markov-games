@@ -17,6 +17,8 @@ from utils.utils import get_is_adversarial
 from collections import deque
 import math
 
+from matplotlib import pyplot as plt
+
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 np.seterr(invalid='raise')
@@ -73,7 +75,7 @@ class BagsGamesCIFAR(gym.Env):
 
         # Actions space
         self.action_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=-2, high=2, shape=(4,), dtype=np.float32),
+            'adversary': spaces.Box(low=-2, high=2, shape=(9,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
@@ -128,6 +130,11 @@ class BagsGamesCIFAR(gym.Env):
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         self.startLabel = startLabel
         self.originLabel = originLabel
+        
+        # print(startLabel)
+        # plt.imshow(self.starting_point.transpose(1,2,0))
+        # plt.show()
+        
         # self.starting_point, _ = ep.astensor_(self.starting_point)
         # self.original, self.restore_type = ep.astensor_(self.wanted_point)
         # print("Start:", startLabel, "| Wanted:", originLabel)
@@ -183,8 +190,8 @@ class BagsGamesCIFAR(gym.Env):
     
         # create queues to track various statistic used to derive the state
         # success rate, step size, relative location, progress in episode
-        self.stats_is_adv = deque(maxlen=30)
-        self.dist_derivative = deque(maxlen=30)
+        self.stats_is_adv = deque(maxlen=100)
+        self.avg_adv = 0.5
         self.improve_time_avg = deque(maxlen=30)
         self.moving_avg_step_dist = deque(maxlen=30)
         # pos = self.best_advs[::4,::4].flatten()
@@ -330,12 +337,21 @@ class BagsGamesCIFAR(gym.Env):
             self.action_spherical = scale * self.spherical_step
             self.action_source = scale * self.source_step
         
+        # plt.imshow(self.best_advs.transpose(1,2,0))
+        # plt.show()
+        
         # generate new advarsarial candidate
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
                                                      self.action_spherical, self.action_perlin)
+        cand = self.candidate
         # print(type(self.candidate), type(self.best_advs), type(self.wanted_point))
-        cand = self.normalize(torch.tensor(self.candidate))
-        self.is_adv, self.logits = self.is_adversarial(ep.astensor(cand.unsqueeze(0)))
+        
+        # apply transformations
+        if self.adaptive == 1 or self.adaptive == 3:
+            cand = self.apply_transforms(cand, action[4:])
+        cand_normed = self.normalize(cand)
+        # cand = self.normalize(torch.tensor(self.candidate))
+        self.is_adv, self.logits = self.is_adversarial(ep.astensor(cand_normed.unsqueeze(0)))
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(torch.tensor(self.candidate).unsqueeze(0).unsqueeze(1)))
         self.is_adv = self.is_adv.raw.numpy()[0]
         
@@ -343,7 +359,7 @@ class BagsGamesCIFAR(gym.Env):
         # wher the final decision on is_adv is made
             
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        obs, self.span = self.obs_int(self.logits, self.candidate)
+        obs, self.span = self.obs_int(self.logits, cand.numpy())
         # r = self.reward_int(self.queues.getStepSizeQueue(index), self.candidate, self.rewarder)
         r = self.reward_int(self.chain.getStepSizeQueue(0), self.candidate, self.rint)
         # info = self.get_info()
@@ -415,7 +431,8 @@ class BagsGamesCIFAR(gym.Env):
         observation = []
         
         observation.append(self.iter/5000)
-        observation.append(np.mean(self.stats_is_adv))
+        self.avg_adv = np.mean(self.stats_is_adv)
+        observation.append(self.avg_adv)
         observation.append(self.gap/15)
         observation.append(self.dist/15)
         observation.append(loc)
@@ -431,6 +448,9 @@ class BagsGamesCIFAR(gym.Env):
     def generate_boundary_sample(self, X_orig, X_adv_current, mask, source_step, spherical_step, perlin_freq):
         # Adapted from FoolBox BoundaryAttack.
             
+        # plt.imshow(X_adv_current.transpose(1,2,0))
+        # plt.show()
+        
         mask = mask ** self.action_mask
         # rnd_normal = pn.create_perlin_noise(self.dim, color=False, freq=self.action_perlin, normalize=False).squeeze(0)
         # rnd_normal = pn.generate_perlin_noise_2d(self.dim, perlin_freq)
@@ -466,6 +486,9 @@ class BagsGamesCIFAR(gym.Env):
 
         # From there, take a step towards the target.
         candidate = spherical_candidate + (source_step * self.source_norm) * new_source_direction
+
+        # plt.imshow(candidate.transpose(1,2,0))
+        # plt.show()
 
         np.clip(candidate, 0., 1., out=candidate)
         return np.float32(candidate)
@@ -549,9 +572,52 @@ class BagsGamesCIFAR(gym.Env):
         else:
             self.next = 1
             
+    def apply_transforms(self, sample, action):
+
+        sample = sample.transpose(1,2,0)
+              
+        trs = [transforms.ToTensor()]
+        # brightness & contrast
+        if action[0] > 0:
+            a = action[0]/4
+            trs.append(transforms.ColorJitter(brightness=a, contrast=a))
+        # rotate
+        if action[1] > 0:
+            trs.append(transforms.RandomAffine(degrees=action[1]*90))
+        # crop
+        if action[2] > 0:
+            a = action[2]/10
+            trs.append(transforms.RandomResizedCrop(size=(32,32), scale=(0.8 - a, 0.8 + a)))
+        # translate
+        if action[3] > 0:
+            a = action[3]/10
+            trs.append(transforms.RandomAffine(degrees=0, translate=(a, a)))
+
+        # plt.imshow(sample)
+        # plt.show()         
+
+        # compose
+        apply = transforms.Compose(trs)
+        sample = apply(sample)
+                
+        # scale
+        if action[4] > 0:
+            a = action[1]/10
+            sc = np.random.uniform(-a, a)
+            sample = sample*(1+sc)
+            sample = torch.clamp(sample, 0, 1)
+
+        # plt.imshow(sample.numpy().transpose(1,2,0))
+        # plt.show()
+       
+        return sample
+            
     def swap(self, span, action):
+        # if self.curr == 1:
+        #     print('ADV:', min(span), action, self.dist, self.avg_adv)
         # if self.curr == 2:
-        #     print('ADV:', span)
+        #     print('BEN:', min(span), action)
+        
         if action.shape == 1:
             action = action[0]
         if self.adaptive == 0:
@@ -608,9 +674,9 @@ class BagsGamesCIFAR(gym.Env):
         nr = self.rn.randint(*self.indices)
         
         mu, sigma = 0, 0.01 # mean and standard deviation
-        s = self.rnn.normal(mu, sigma, self.dim*self.dim)
+        s = self.rnn.normal(mu, sigma, 3*32*32)
         # s = torch.tensor(s.reshape(28,28).astype('float32'))
-        s = s.reshape(self.dim,self.dim).astype('float32')
+        s = s.reshape(3,32,32).astype('float32')
         # print(s.shape)
         # print(self.dataset[nr][0].shape)
         s = np.add(self.dataset[nr][0].squeeze(0).numpy(), s)

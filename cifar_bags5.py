@@ -18,7 +18,7 @@ def objective(trial):
     VA-AD: Vanilla Adversary - Adaptive Defense
     """
     
-    print('Training CBAGS-5: VA-AD..')
+    print('Training CBAGS-5: AA-TD..')
     
     eval_steps = 5000
     adaptive = 3 # int adaptive
@@ -26,7 +26,6 @@ def objective(trial):
     ratio = 0.5
     defended = False
     seed = 2
-    logdir = "./logs/"
     
     steps = trial.suggest_categorical('steps', [600,1000,2000,3000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
@@ -36,7 +35,8 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    scale = trial.suggest_categorical('scale', [2,3,5,8,10])
+    scale = trial.suggest_categorical('scale', [10,15,20])
+    # scale = 10
     inter = 1
     radv = trial.suggest_categorical('radv', [1,2,3,4,5])
     # radv = 3

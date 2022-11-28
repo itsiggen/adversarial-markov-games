@@ -295,8 +295,8 @@ if __name__ == "__main__":
     loss_fn = ContrastiveLoss(margin)
     lr = 1e-3
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = lr_scheduler.StepLR(optimizer, 20, gamma=0.1, last_epoch=-1)
-    n_epochs = 50
+    scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
+    n_epochs = 20
     log_interval = 100
     
     # Train and save the model

@@ -129,7 +129,7 @@ class HsjaSkipCIFAR(gym.Env):
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
             
-        self.best_advs, self.extra_queries = self.binary_step(ep.astensor(self.best_advs), 1)    
+        self.best_advs, self.extra_queries = self.binary_step(ep.astensor(self.best_advs), 1)
         # pos = self.best_advs.squeeze(0).numpy()
         # pos = pos[::4,::4].flatten().tolist()
         
@@ -147,6 +147,9 @@ class HsjaSkipCIFAR(gym.Env):
         observation.append(np.float32(0.5))
         observation.append(np.float32(0.0))
         # observation.extend(pos)
+        
+        # self.dist = l2(self.wanted_point, self.best_advs.raw.squeeze(0).numpy())
+        # print(self.iter, self.gap, self.dist)
 
         return observation
         
@@ -229,6 +232,8 @@ class HsjaSkipCIFAR(gym.Env):
         # print(self.dist)
         # TODO: potentially reward shorter episodes       
         # self.converged = self.dist < self.goal
+        # print(self.iter, self.gap, self.dist)
+        
         if self.iter >= self.steps:
             self.done = True
         
@@ -239,6 +244,7 @@ class HsjaSkipCIFAR(gym.Env):
             
         # print(self.action_delta, self.action_grad, self.action_step)    
 
+        
         obs = self.observation()
         r = self.reward(self.rewarder)
         info = {"episode_number" : self.iter,

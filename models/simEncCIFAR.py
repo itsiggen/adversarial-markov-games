@@ -210,7 +210,7 @@ class SiameseCIFAR(Dataset):
     Test: Creates fixed pairs for testing
     """
 
-    def __init__(self, dataset, mu=0, std=0.3):
+    def __init__(self, dataset, mu=0, std=0.1):
         self.cifar_dataset = dataset
         self.train = self.cifar_dataset.train
         # print(self.train)
@@ -293,8 +293,8 @@ if __name__ == "__main__":
     loss_fn = ContrastiveLoss(margin)
     lr = 1e-3
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = lr_scheduler.StepLR(optimizer, 20, gamma=0.1, last_epoch=-1)
-    n_epochs = 50
+    scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
+    n_epochs = 20
     log_interval = 100
     
     # Train and save the model

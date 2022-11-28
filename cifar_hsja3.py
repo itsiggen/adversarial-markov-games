@@ -24,22 +24,24 @@ def objective(trial):
     stt = 1 # adversary is learning
     cont = 0
     inter = 1
-    defended = True
+    defended = False
     seed = 2
     
     eval_steps = 5000
-    steps = trial.suggest_categorical('steps', [600,1000,3000,5000])
-    buffer = trial.suggest_categorical('buffer', [128,256,512])
-    batch = trial.suggest_categorical('batch', [16,32,64])
+    steps = trial.suggest_categorical('steps', [600,1000,3000])
+    # steps = 300
+    buffer = trial.suggest_categorical('buffer', [64,128,256,1024])
+    batch = trial.suggest_categorical('batch', [16,32])
     # batch = 32
-    lr = trial.suggest_categorical('lr', [0.01,0.003,0.001,0.0001])
+    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
-    scale = trial.suggest_categorical('scale', [2,4,8,10,12])
+    scale = trial.suggest_categorical('scale', [1,2,4,8,16])
     # scale = 8
     radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
-    ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
+    # ts = 100
 
 
     # Create environment
@@ -146,6 +148,7 @@ def objective(trial):
                     scale=scale,
                     defended=defended,
                     train=False,
+                    test=True,
                     vanilla=vanilla,
                     cont=cont,
                     rint=5,
@@ -183,8 +186,8 @@ def reset():
 
 def test(num, rew, scale):
     eval_steps = 5000
-    adaptive = 0
-    # vanilla = True
+    adaptive = 1
+    vanilla = True
     defended = False
     ratio = 0.5
     cont = 0
@@ -196,7 +199,7 @@ def test(num, rew, scale):
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
-                    # vanilla=vanilla,
+                    vanilla=vanilla,
                     dataset=dataset,
                     scale=scale,
                     defended=defended,
@@ -236,10 +239,10 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("16"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=int(8), type=int, help="Scale")
-    parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("11"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(10), type=int, help="Scale")
+    parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.

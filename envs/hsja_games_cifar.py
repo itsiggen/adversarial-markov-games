@@ -51,7 +51,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.max_grad_evals = max_gradient_eval_steps
         self.gamma = gamma
         self.adaptive = adaptive  # 0: stateful det | 1: adv adaptive | 2: int adaptive | 3: both adaptive
-        self.vanilla = vanilla,
+        self.vanilla = vanilla
         self.ratio_benign = ratio_benign
         self.train = train
         self.test = test
@@ -263,6 +263,7 @@ class HsjaGamesCIFAR(gym.Env):
             # Candidate remains adversarial only if outside the containment area
             # candid = self.switch(self.lastStep, action)
             candid, _ = self.swap(self.span, action)
+            # print(self.is_adv, candid)
             # Is_det: if adversarial & inside containment
             self.is_det = np.logical_and(self.is_adv, not candid)
             # Is adv only if it actually is AND is out of containment area
@@ -340,6 +341,7 @@ class HsjaGamesCIFAR(gym.Env):
                 if l2(self.wanted_point.cpu(), adv.raw.squeeze(0).cpu().numpy()) < self.dist:
                     self.best_advs = adv
                 self.update()
+                # print(self.iter, self.gap, self.dist)
                  
     def step_adv(self, action):
         action = np.nan_to_num(action, nan=0.0, posinf=2, neginf=-2)
@@ -530,6 +532,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.iter += 1
+        # print(self.is_adv)
         # print(self.bsteps, self.bcand.sum(), self.starting_point.sum())
         return self.logits, self.bcand
         
@@ -547,6 +550,7 @@ class HsjaGamesCIFAR(gym.Env):
             self.lows = self.mids
             self.imp = 0
         self.bsteps += 1
+        # print('bin steps:', self.bsteps)
         if self.highs - self.lows <= self.threshold:
             return self.best_candidate, self.bsteps
         else:
@@ -601,7 +605,7 @@ class HsjaGamesCIFAR(gym.Env):
             grad = ep.mean(atleast_kd(vals, self.rv.ndim) * self.rv, axis=0)
     
             grad /= ep.norms.l2(atleast_kd(flatten(grad), grad.ndim)) + 1e-12
-            # print('grad steps:', steps)
+            # print('grad steps:', self.gsteps)
             return grad, ep.mean(multipliers, axis=0).raw.squeeze(0).cpu().numpy()
     
     def jump_reset(self):
@@ -623,9 +627,11 @@ class HsjaGamesCIFAR(gym.Env):
     def jump_proceed(self):
         # print(l2(self.best_advs.raw.squeeze(0).numpy(), self.jcand.raw.squeeze(0).numpy()), self.jsteps)
         if self.is_adv:
+            # print('jump steps:', self.jsteps)
             return self.jcand, self.jsteps
         elif self.jsteps > 9:
             # If jump fails for 10 steps, return last best adv
+            # print('jump steps:', self.jsteps)
             return self.best_advs, self.jsteps            
         else:
             self.jeps /= 2
@@ -727,7 +733,7 @@ class HsjaGamesCIFAR(gym.Env):
         return a + b
     
     def reward7(self):
-        return self.reward1() + self.reward6()
+        return self.reward3() + self.reward6()
     
     def reward8(self):
         return self.reward5() + self.reward6()
@@ -807,12 +813,12 @@ class HsjaGamesCIFAR(gym.Env):
                 inn = min(span) > 0.01*self.intercept
             else:
                 inn = True
-            # print(inn, self.curr)
         elif self.adaptive == 1:
             if self.vanilla:
                 inn = min(span) > 0.01*self.intercept
             else:
                 inn = True
+            # print(inn, self.adaptive, self.vanilla, min(span), action[0])
         else:
             inn = min(span) > action
 
