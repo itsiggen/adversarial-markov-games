@@ -24,12 +24,13 @@ def objective(trial):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    stt = 0 # interceptor is learning
+    stt = 1 # adversary is learning
     defended = False
     cont = 1 # contrastive model used
     seed = 2
     
     steps = trial.suggest_categorical('steps', [600,1000,2000,3200])
+    steps = 300
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
@@ -39,6 +40,7 @@ def objective(trial):
     scale = trial.suggest_categorical('scale', [2,4,8,16])
     radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
     ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
+    ts = 1800
     rint = 1
     inter = 1
     
@@ -148,9 +150,9 @@ def objective(trial):
                     rint=rint,
                     radv=radv,
                     intercept=inter)
-
-    interceptor = RPPO.load("mods/games/chsja5adv_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/chsja4adv.pt", envv, "adversary", seed)
+    
+    interceptor = RPPO.load("mods/games/chsja4int_24.pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/chsja5adv_" + str(trial.number) + ".pt", envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)    
 

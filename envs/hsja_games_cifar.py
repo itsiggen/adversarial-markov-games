@@ -62,6 +62,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
         self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
+        acts = 8 if self.adaptive == 3 else 3
         
         # self.tt = 0
         
@@ -79,7 +80,7 @@ class HsjaGamesCIFAR(gym.Env):
 
         # Actions space
         self.action_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=-2, high=2, shape=(3,), dtype=np.float32),
+            'adversary': spaces.Box(low=-2, high=2, shape=(acts,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
@@ -186,6 +187,9 @@ class HsjaGamesCIFAR(gym.Env):
         self.phase = 2
         self.first_adv = 1
         self.collisions = 0
+        
+        # no transformations for first query
+        self.action_trans = [-2,-2,-2,-2,-2]
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -207,7 +211,7 @@ class HsjaGamesCIFAR(gym.Env):
         # print(cand.raw.detach().squeeze(0).numpy().shape)
         # Return observation for interceptor, the first agent to move
         # obs, ix, self.lastStep, self.alt = self.observation_int(self.logits, cand.raw.detach().squeeze(0).numpy())
-        obs, self.span = self.obs_int(self.logits, cand.raw.detach().squeeze(0).cpu().numpy(), 1)
+        obs, self.span = self.obs_int(self.logits, cand.detach().squeeze(0).cpu().numpy(), 1)
         
         return obs
 
@@ -315,7 +319,7 @@ class HsjaGamesCIFAR(gym.Env):
         if self.phase == 0: logits, cand = self.grad_query()
         elif self.phase == 1: logits, cand = self.jump_query()
         elif self.phase == 2: logits, cand = self.binary_query()
-        return logits.cpu(), cand.raw.detach().squeeze(0).cpu().numpy()
+        return logits.cpu(), cand.detach().squeeze(0).cpu().numpy()
 
     def phase_proceed(self):
         if self.phase == 0:
@@ -364,6 +368,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.action_grad = (num_grad * self.action_grad).astype(int)
         # self.action_binary = self.scale_binary(action[3])
         # print(self.action_grad)
+        self.action_trans = action[3:]
         
         # Setting actions according to vanilla HSJA
         if self.adaptive == 0 or self.adaptive == 2:
@@ -384,7 +389,7 @@ class HsjaGamesCIFAR(gym.Env):
         
         # Normal attack flow is interrupted here, generate obs for interceptor
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, cand.raw.detach().squeeze(0).numpy())
-        obs, self.span = self.obs_int(self.logits, cand.raw.detach().squeeze(0).cpu().numpy(), 1)
+        obs, self.span = self.obs_int(self.logits, cand.detach().squeeze(0).cpu().numpy(), 1)
         # r = self.reward_int(self.queues.getStepSizeQueue(index), cand, self.rint)
         r = self.reward_int(self.chain.getStepSizeQueue(0), cand, self.rint)
         # Set state to adversary
@@ -397,8 +402,8 @@ class HsjaGamesCIFAR(gym.Env):
         # print(self.gap, distance)
         # Calculate the distance to target gained in the last rep
         self.gain = self.dist - distance
-        # print('gain:', self.gain)
         self.dist = distance
+        # print('distance:', self.dist)
         self.gain_moving = self.gain_moving * 0.2 + (self.gain * 0.8) / self.gap
           
     def step_ben(self, action):
@@ -526,7 +531,13 @@ class HsjaGamesCIFAR(gym.Env):
         # fig = plt.figure
         # plt.imshow(self.bcand.raw.squeeze(0).numpy(), cmap='gray')
         # plt.show()
-        cand = self.normalize(self.bcand.raw).unsqueeze(0)
+        # apply transformations
+        if self.adaptive == 3:
+            self.btrans = self.apply_transforms(self.bcand.raw, self.action_trans)
+        else:
+            self.btrans = self.bcand.raw
+        cand = self.normalize(self.btrans).unsqueeze(0)
+
         self.is_adv, self.logits = self.is_adversarial(cand.to(device))
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.bcand).raw.unsqueeze(1).to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
@@ -534,7 +545,8 @@ class HsjaGamesCIFAR(gym.Env):
         self.iter += 1
         # print(self.is_adv)
         # print(self.bsteps, self.bcand.sum(), self.starting_point.sum())
-        return self.logits, self.bcand
+        # return self.logits, self.bcand
+        return self.logits, self.btrans
         
     def binary_proceed(self):
         if self.is_adv:
@@ -575,13 +587,17 @@ class HsjaGamesCIFAR(gym.Env):
     def grad_query(self):
         # print(self.gsteps)
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(0).to(device))
-        cand = self.normalize(self.perturbed[self.gsteps].raw).unsqueeze(0)
+        # apply transformations
+        grad_cand = self.perturbed[self.gsteps].raw
+        if self.adaptive == 3:
+            grad_cand = self.apply_transforms(grad_cand, self.action_trans)
+        cand = self.normalize(grad_cand).unsqueeze(0)
         self.is_adv, self.logits = self.is_adversarial(cand.to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         # print(self.is_adv)
         self.iter += 1
-        return self.logits, self.perturbed[self.gsteps]
+        return self.logits, grad_cand
 
     def grad_proceed(self):
         self.gsteps += 1
@@ -614,15 +630,20 @@ class HsjaGamesCIFAR(gym.Env):
         # print(grad)
 
     def jump_query(self):
-        self.jcand = ep.clip(self.best_advs + self.jeps * self.grad, 0, 1)
+        self.jcand = ep.clip(self.best_advs + self.jeps * self.grad, 0, 1).raw
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(0).to(device))
-        cand = self.normalize(self.jcand.raw).unsqueeze(0)
+        # apply transformations
+        if self.adaptive == 3:
+            self.jtrans = self.apply_transforms(self.jcand, self.action_trans)
+        else:
+            self.jtrans = self.jcand
+        cand = self.normalize(self.jtrans).unsqueeze(0)
         self.is_adv, self.logits = self.is_adversarial(cand.to(device))
         self.is_adv = self.is_adv.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.jsteps += 1
         self.iter += 1
-        return self.logits, self.jcand
+        return self.logits, self.jtrans
         
     def jump_proceed(self):
         # print(l2(self.best_advs.raw.squeeze(0).numpy(), self.jcand.raw.squeeze(0).numpy()), self.jsteps)
@@ -798,6 +819,47 @@ class HsjaGamesCIFAR(gym.Env):
             theta = 1 / (self.dim ** 2)
             result = theta * self.dist 
         return result
+    
+    def apply_transforms(self, sample, action):
+
+        # sample = sample.transpose(1,2,0)
+              
+        # trs = [transforms.ToTensor()]
+        trs = []
+        # brightness & contrast
+        if action[0] > 0:
+            a = action[0]/4
+            trs.append(transforms.ColorJitter(brightness=a, contrast=a))
+        # rotate
+        if action[1] > 0:
+            trs.append(transforms.RandomAffine(degrees=action[1]*90))
+        # crop
+        if action[2] > 0:
+            a = action[2]/10
+            trs.append(transforms.RandomResizedCrop(size=(32,32), scale=(0.8 - a, 0.8 + a)))
+        # translate
+        if action[3] > 0:
+            a = action[3]/10
+            trs.append(transforms.RandomAffine(degrees=0, translate=(a, a)))
+
+        # plt.imshow(sample)
+        # plt.show()         
+
+        # compose
+        apply = transforms.Compose(trs)
+        sample = apply(sample)
+                
+        # scale
+        if action[4] > 0:
+            a = action[1]/10
+            sc = np.random.uniform(-a, a)
+            sample = sample*(1+sc)
+            sample = torch.clamp(sample, 0, 1)
+
+        # plt.imshow(sample.numpy().transpose(1,2,0))
+        # plt.show()
+       
+        return sample
     
     def swap(self, span, action):
         # if self.curr == 0 or self.curr == 1:

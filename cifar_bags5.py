@@ -22,7 +22,7 @@ def objective(trial):
     
     eval_steps = 5000
     adaptive = 3 # int adaptive
-    stt = 0 # interceptor is learning
+    stt = 1 # adversary is learning
     ratio = 0.5
     defended = False
     seed = 2

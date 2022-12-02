@@ -60,6 +60,7 @@ class BagsGamesCIFAR(gym.Env):
         self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
         self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
+        acts = 9 if self.adaptive == 3 else 4
 
         # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
@@ -75,7 +76,7 @@ class BagsGamesCIFAR(gym.Env):
 
         # Actions space
         self.action_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=-2, high=2, shape=(9,), dtype=np.float32),
+            'adversary': spaces.Box(low=-2, high=2, shape=(acts,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
@@ -347,7 +348,7 @@ class BagsGamesCIFAR(gym.Env):
         # print(type(self.candidate), type(self.best_advs), type(self.wanted_point))
         
         # apply transformations
-        if self.adaptive == 1 or self.adaptive == 3:
+        if self.adaptive == 3:
             cand = self.apply_transforms(cand, action[4:])
         cand_normed = self.normalize(cand)
         # cand = self.normalize(torch.tensor(self.candidate))
@@ -467,7 +468,7 @@ class BagsGamesCIFAR(gym.Env):
         dot = np.vdot(sampling_dir, self.source_direction)
         sampling_dir -= dot * self.source_direction  # Project orthogonal to source direction
         sampling_dir *= mask  # Apply regional mask
-        sampling_dir /= np.linalg.norm(sampling_dir)  # Norming increases magnitude of masked regions
+        sampling_dir /= np.linalg.norm(sampling_dir) + 1e-9  # Norming increases magnitude of masked regions
 
         sampling_dir *= spherical_step * self.source_norm  # Norm to length stepsize*(dist from src)
 
