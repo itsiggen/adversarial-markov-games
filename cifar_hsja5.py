@@ -29,18 +29,18 @@ def objective(trial):
     cont = 1 # contrastive model used
     seed = 2
     
-    steps = trial.suggest_categorical('steps', [600,1000,2000,3200])
-    steps = 300
+    steps = trial.suggest_categorical('steps', [1000,2000,3200])
+    # steps = 300
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
-    scale = trial.suggest_categorical('scale', [2,4,8,16])
+    # scale = trial.suggest_categorical('scale', [2,4,8,16])
     radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
     ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
-    ts = 1800
+    # ts = 1800
     rint = 1
     inter = 1
     
@@ -51,7 +51,6 @@ def objective(trial):
                    adaptive=adaptive,
                    dataset=dataset,
                    train=False,
-                   scale=scale,
                    rint=rint,
                    radv=radv,
                    defended=defended,
@@ -90,7 +89,7 @@ def objective(trial):
     n_steps = 0
     rst = 1
         
-    for timestep in tqdm(range(total_timesteps), disable=False):
+    for timestep in tqdm(range(total_timesteps), disable=True):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move
@@ -146,7 +145,6 @@ def objective(trial):
                     defended=defended,
                     cont=cont,
                     train=False,
-                    scale=scale,
                     rint=rint,
                     radv=radv,
                     intercept=inter)

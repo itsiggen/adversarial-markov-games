@@ -239,10 +239,10 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("11"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=int(10), type=int, help="Scale")
-    parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("8"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(8), type=int, help="Scale")
+    parser.add_argument('--rew', default=int(8), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.

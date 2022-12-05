@@ -121,8 +121,9 @@ class HsjaGamesCIFAR(gym.Env):
     
     def scale_delta(self, v):
         # Delta from [-2,2] to [0.0001,2.0001]
-        base = ((v + 2) / self.scale) + 0.0001
-        return base * self.dist
+        # base = ((v + 2) / self.scale) + 0.0001
+        # return base * self.dist
+        return v + 2.00001 # to [0.00001,4.00001]
     
     def scale_step(self, v):
         # Jump step search from [-2,2] to [0.1,1.1]
@@ -358,8 +359,9 @@ class HsjaGamesCIFAR(gym.Env):
                     
         # Scale actions to proper values
         # self.action_delta = 0.1*self.dist if self.reps == 1 else self.scale_delta(action[0])*self.dist
-    
-        self.action_delta = self.scale_delta(action[0])
+        
+        # self.action_delta = self.scale_delta(action[0])
+        self.action_delta = self.scale_delta(action[0])*self.select_delta(self.dist)
         # if self.reps == 1: self.action_delta = 0.1*self.dist
         # self.action_step = 1.0 if self.reps == 1 else self.scale_step(action[1])
         self.action_step = self.scale_step(action[1])
@@ -369,6 +371,7 @@ class HsjaGamesCIFAR(gym.Env):
         # self.action_binary = self.scale_binary(action[3])
         # print(self.action_grad)
         self.action_trans = action[3:]
+        # self.action_trans = [2,2,2,2,2]
         
         # Setting actions according to vanilla HSJA
         if self.adaptive == 0 or self.adaptive == 2:
@@ -475,6 +478,7 @@ class HsjaGamesCIFAR(gym.Env):
     
     def obs_adv(self):
         # generate observation based on the history of responses
+        # print(self.dist)
         if self.first_adv:
             observation = []
             # observation.append(np.float32(1.0))
@@ -863,8 +867,8 @@ class HsjaGamesCIFAR(gym.Env):
     
     def swap(self, span, action):
         # if self.curr == 0 or self.curr == 1:
-        #     if action[0] < min(span):
-        #         print('ADV:', min(span), action[0], self.phase, self.iter)
+        #     # if action[0] < min(span):
+        #     print('ADV:', min(span), action[0], self.phase, self.iter)
         # if self.curr == 2:
         #     # if min(span) < 0.01: self.tt += 1
         #     print('BEN:', span, action, self.queries)
@@ -878,11 +882,13 @@ class HsjaGamesCIFAR(gym.Env):
         elif self.adaptive == 1:
             if self.vanilla:
                 inn = min(span) > 0.01*self.intercept
+                # print(inn, min(span), self.iter)
             else:
                 inn = True
             # print(inn, self.adaptive, self.vanilla, min(span), action[0])
         else:
             inn = min(span) > action
+            # inn = True
 
         if self.train:
             if self.curr == 2:
