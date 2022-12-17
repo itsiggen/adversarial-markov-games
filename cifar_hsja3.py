@@ -37,7 +37,7 @@ def objective(trial):
     epochs = 20
     gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
-    scale = trial.suggest_categorical('scale', [1,2,4,8,16])
+    scale = trial.suggest_categorical('scale', [2,4,8,16])
     # scale = 8
     radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
     ts = trial.suggest_categorical('ts', [1e6,2e6])
@@ -240,8 +240,8 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("8"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=int(8), type=int, help="Scale")
+    parser.add_argument('--load', default=str("18"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(16), type=int, help="Scale")
     parser.add_argument('--rew', default=int(8), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:

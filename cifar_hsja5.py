@@ -29,17 +29,18 @@ def objective(trial):
     cont = 1 # contrastive model used
     seed = 2
     
-    steps = trial.suggest_categorical('steps', [1000,2000,3200])
-    # steps = 300
+    steps = trial.suggest_categorical('steps', [1000,3000,5000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
     buffer = 2048
-    batch = trial.suggest_categorical('batch', [32,64,128])
+    # batch = trial.suggest_categorical('batch', [32,64,128])
+    batch = 64
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
-    # scale = trial.suggest_categorical('scale', [2,4,8,16])
-    radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
-    ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
+    scale = trial.suggest_categorical('scale', [2,4,8,16])
+    # radv = trial.suggest_categorical('reward', [3,4,5,6,7,8])
+    radv = 9
+    ts = trial.suggest_categorical('ts', [5e5,1e6])
     # ts = 1800
     rint = 1
     inter = 1
@@ -50,6 +51,7 @@ def objective(trial):
                    ratio_benign=ratio,
                    adaptive=adaptive,
                    dataset=dataset,
+                   scale=scale,
                    train=False,
                    rint=rint,
                    radv=radv,
@@ -59,7 +61,7 @@ def objective(trial):
     
     total_timesteps = int(ts)
     
-    interceptor = RPPO.load("mods/games/chsja4int_24.pt" , env, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/chsja4int_5.pt" , env, "interceptor", seed)
      
     adversary = RPPO(policy="MlpPolicy",
                 env=env,
@@ -142,6 +144,7 @@ def objective(trial):
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
                     cont=cont,
                     train=False,
@@ -149,7 +152,7 @@ def objective(trial):
                     radv=radv,
                     intercept=inter)
     
-    interceptor = RPPO.load("mods/games/chsja4int_24.pt" , envv, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/chsja4int_5.pt" , envv, "interceptor", seed)
     adversary = RPPO.load("mods/games/chsja5adv_" + str(trial.number) + ".pt", envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)    
@@ -183,7 +186,7 @@ def reset():
 
 def test(num, rew):
     eval_steps = 5000
-    adaptive = 2 # int adaptive 
+    adaptive = 3 # int adaptive 
     ratio = 0.5
     defended = False
     cont = 1
@@ -198,17 +201,16 @@ def test(num, rew):
                     defended=defended,
                     cont=cont,
                     train=False,
-                    test=True,
                     rint=rew,
                     radv=1,)
 
-    interceptor = RPPO.load("mods/games/chsja4int_2.pt" , envv, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/chsja4int_5.pt" , envv, "interceptor", seed)
     adversary = RPPO.load("mods/games/chsja5adv_" + str(num) + ".pt", envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
     
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=20)
     
     # res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(mean_eps,3), round(start_eps,3), round(mean_acc,3)])
     # print(res)
@@ -234,8 +236,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("24"), type=str, help="Model to load")
-    parser.add_argument('--rew', default=int(6), type=bool, help="Reward used")
+    parser.add_argument('--load', default=str("0"), type=str, help="Model to load")
+    parser.add_argument('--rew', default=int(9), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
