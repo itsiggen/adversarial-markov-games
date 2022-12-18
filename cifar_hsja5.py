@@ -38,8 +38,8 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
     scale = trial.suggest_categorical('scale', [2,4,8,16])
-    # radv = trial.suggest_categorical('reward', [3,4,5,6,7,8])
-    radv = 9
+    radv = trial.suggest_categorical('reward', [3,4,5,6,7,8])
+    # radv = 9
     ts = trial.suggest_categorical('ts', [5e5,1e6])
     # ts = 1800
     rint = 1
