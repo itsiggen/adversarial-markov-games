@@ -8,16 +8,6 @@ from torch.optim import lr_scheduler
 import torch.optim as optim
 from tqdm import tqdm
 
-cuda = torch.cuda.is_available()
-num_classes = 10
-epochs = 10
-
-# train_dataset = MNIST('../data/MNIST', train=True, download=True,
-
-transform=transforms.ToTensor()
-train_dataset = datasets.MNIST('../data', train=True, transform=transform, download=True)
-test_dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
-
 class mnistNet(nn.Module):
     def __init__(self):
         super(mnistNet, self).__init__()
@@ -279,6 +269,13 @@ class SiameseMNIST(Dataset):
         return len(self.mnist_dataset)
     
 if __name__ == "__main__":
+    cuda = torch.cuda.is_available()
+    num_classes = 10
+    epochs = 10
+
+    transform=transforms.ToTensor()
+    train_dataset = datasets.MNIST('../data', train=True, transform=transform, download=True)
+    test_dataset = datasets.MNIST('../data', train=False, transform=transform, download=True)
     
     siamese_train_dataset = SiameseMNIST(train_dataset)
     siamese_test_dataset = SiameseMNIST(test_dataset)

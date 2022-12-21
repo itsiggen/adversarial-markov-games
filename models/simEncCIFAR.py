@@ -8,19 +8,6 @@ from torch.optim import lr_scheduler
 import torch.optim as optim
 from tqdm import tqdm
 
-cuda = torch.cuda.is_available()
-num_classes = 10
-epochs = 10
-
-# train_dataset = MNIST('../data/MNIST', train=True, download=True,
-
-transform = transforms.Compose([transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                      std=[0.229, 0.224, 0.225])])
-
-train_dataset = datasets.CIFAR10('../data', train=True, transform=transform, download=True)
-test_dataset = datasets.CIFAR10('../data', train=False, transform=transform, download=True)
-
 class cifarNet(nn.Module):
     def __init__(self):
         super(cifarNet, self).__init__()
@@ -278,6 +265,17 @@ class SiameseCIFAR(Dataset):
     
 if __name__ == "__main__":
     
+    cuda = torch.cuda.is_available()
+    num_classes = 10
+    epochs = 10
+
+    transform = transforms.Compose([transforms.ToTensor(),
+                                    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                        std=[0.229, 0.224, 0.225])])
+
+    train_dataset = datasets.CIFAR10('../data', train=True, transform=transform, download=True)
+    test_dataset = datasets.CIFAR10('../data', train=False, transform=transform, download=True)
+
     siamese_train_dataset = SiameseCIFAR(train_dataset)
     siamese_test_dataset = SiameseCIFAR(test_dataset)
     batch_size = 256
