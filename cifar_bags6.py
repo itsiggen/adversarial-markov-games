@@ -13,8 +13,8 @@ from utils.evaluation import evaluate_rdpolicy
 from envs.bags_games import BagsGames
 # os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-transform=transforms.ToTensor()
-dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
+transform = transforms.ToTensor()
+dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """
@@ -27,7 +27,8 @@ def objective(trial):
     adaptive = 3 # both adaptive 
     stt = 0 # interceptor is learning
     ratio = 0.5
-    defended = True
+    defended = False
+    cont = 2
     seed = 2
 
     steps = trial.suggest_categorical('steps', [1000,2000,3000])
@@ -41,22 +42,22 @@ def objective(trial):
     ent_coef = 0
     vf_coef = 0.5
     rint = trial.suggest_categorical('rint', [3,4,5])
-    scale = 8
-    radv = 1
-    inter = 1
+    radv = 5
+    scale = 20
     ts = trial.suggest_categorical('ts', [1e6,2e6])
     
     # Create environment
-    env = gym.make("BagsGames-v0",
+    env = gym.make("BagsGamesCIFAR-v0",
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
                    dataset=dataset,
+                   cont=cont,
                    scale=scale,
                    rint=rint,
                    radv=radv,
                    defended=defended,
-                   intercept=inter)
+                   )
     
     total_timesteps = int(ts)
     
@@ -76,7 +77,7 @@ def objective(trial):
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
 
-    adversary = RPPO.load("mods/games/bags5adv_5.pt", env, "adversary", seed)
+    adversary = RPPO.load("mods/games/cbags5adv_29.pt", env, "adversary", seed)
 
     benign = RandomAgent(env=env)
       
@@ -122,26 +123,26 @@ def objective(trial):
     # Save the trained agents
     
     print("Saving models...")
-    interceptor.save("mods/games/bagsa6int_" + str(trial.number) + ".pt")
-    adversary.save("mods/games/bagsa6adv.pt")
+    interceptor.save("mods/games/cbags6int_" + str(trial.number) + ".pt")
+    adversary.save("mods/games/cbags6adv.pt")
 
     # Make evaluation env
     seed = 3
-    envv = gym.make("BagsGames-v0",
+    envv = gym.make("BagsGamesCIFAR-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
+                    cont=cont,
                     scale=scale,
                     defended=defended,
                     train=False,
                     rint=rint,
-                    radv=radv,
-                    intercept=inter)
+                    radv=radv)
     
     # Load the trained agents
-    interceptor = RPPO.load("mods/games/bagsa6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bagsa6adv.pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/bags6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 
@@ -176,11 +177,11 @@ def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    defended = True
+    defended = False
     seed = 2
 
     # Make evaluation env
-    envv = gym.make("BagsGames-v0",
+    envv = gym.make("BagsGamesCIFAR-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
@@ -192,8 +193,8 @@ def test(num, scale, rew):
                     radv=1)
     
 
-    interceptor = RPPO.load("mods/games/bagsa6int_" + str(num) + ".pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bagsa6adv.pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/bags6int_" + str(num) + ".pt", envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
     
@@ -228,7 +229,7 @@ if __name__ == '__main__':
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=20, gc_after_trial=True)
+        study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.scale, args.rew)
     # train(args)
