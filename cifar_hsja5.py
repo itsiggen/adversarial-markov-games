@@ -11,8 +11,9 @@ from utils.evaluation import evaluate_rdpolicy
 from envs.hsja_games_cifar import HsjaGamesCIFAR
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
+path = os.getcwd()
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10(path + '/data', train=False, transform=transform, download=True)
     
 def objective(trial):
     """
