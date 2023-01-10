@@ -36,12 +36,12 @@ def objective(trial):
     # batch = trial.suggest_categorical('batch', [32,64,128])
     batch = 64
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.95, 0.99, step=0.01)
     ent_coef = 0
-    scale = trial.suggest_categorical('scale', [2,4,8,16])
-    radv = trial.suggest_categorical('reward', [3,4,5,6,7,8])
+    scale = trial.suggest_categorical('scale', [1,2,4])
+    radv = trial.suggest_categorical('reward', [7,8,10,12])
     # radv = 9
-    ts = trial.suggest_categorical('ts', [5e5,1e6])
+    ts = trial.suggest_categorical('ts', [6e5,1e6,2e6])
     # ts = 1800
     rint = 1
     inter = 1
@@ -185,7 +185,7 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, rew):
+def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
@@ -200,8 +200,10 @@ def test(num, rew):
                     adaptive=adaptive,
                     dataset=dataset,
                     defended=defended,
+                    scale=scale,
                     cont=cont,
                     train=False,
+                    test=True,
                     rint=rew,
                     radv=1,)
 
@@ -211,7 +213,7 @@ def test(num, rew):
     benign = RandomAgent(env=envv)
     
 
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=20)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
     # res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(mean_eps,3), round(start_eps,3), round(mean_acc,3)])
     # print(res)
@@ -235,15 +237,15 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("0"), type=str, help="Model to load")
-    parser.add_argument('--rew', default=int(9), type=bool, help="Reward used")
+    parser.add_argument('--load', default=str("1"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(2), type=int, help="Scale")
+    parser.add_argument('--rew', default=int(8), type=int, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.rew)
+        mean_eps, mean_acc = test(args.load, args.scale, args.rew)
     # train(args)

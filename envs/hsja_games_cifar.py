@@ -99,15 +99,15 @@ class HsjaGamesCIFAR(gym.Env):
         # Load contrastive models for state
         self.contrast_model = EmbeddingNet()
         if cont == 1:
-            if defended:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
-            else:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
+            # if defended:
+            #     self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
+            # else:
+            self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
         elif cont == 2:
-            if defended:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
-            else:
-                self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
+            # if defended:
+            #     self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
+            # else:
+            self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
         elif cont == 0:
             pass
         self.contrast_model.eval()
@@ -912,12 +912,12 @@ class HsjaGamesCIFAR(gym.Env):
             action = action[0]
         if self.adaptive == 0:
             if self.vanilla:
-                inn = min(span) > 0.01*self.intercept
+                inn = min(span) > 0.005*self.intercept
             else:
                 inn = True
         elif self.adaptive == 1:
             if self.vanilla:
-                inn = min(span) > 0.01*self.intercept
+                inn = min(span) > 0.005*self.intercept
                 # print(inn, min(span), self.iter)
             else:
                 inn = True
