@@ -121,8 +121,9 @@ class HsjaGamesCIFAR(gym.Env):
     
     def scale_delta(self, v):
         # Delta from [-2,2] to [0.0001,2.0001]
-        base = ((v + 2) / self.scale) + 0.0001
-        return base * self.dist
+        # base = ((v + 2) / self.scale) + 0.0001
+        return (v + 3) * self.scale
+        # return base * self.dist
         # return v + 2.00001 # to [0.00001,4.00001]
     
     def scale_step(self, v):
@@ -270,6 +271,7 @@ class HsjaGamesCIFAR(gym.Env):
             # Candidate remains adversarial only if outside the containment area
             # candid = self.switch(self.lastStep, action)
             candid, _ = self.swap(self.span, action)
+            self.evaded.append(1) if candid else self.evaded.append(0) 
             # print(self.is_adv, candid)
             # Is_det: if adversarial & inside containment
             self.is_det = np.logical_and(self.is_adv, not candid)
@@ -364,6 +366,7 @@ class HsjaGamesCIFAR(gym.Env):
         
         # self.action_delta = self.scale_delta(action[0])
         self.action_delta = self.scale_delta(action[0])*self.select_delta(self.dist)
+        
         # if self.reps == 1: self.action_delta = 0.1*self.dist
         # self.action_step = 1.0 if self.reps == 1 else self.scale_step(action[1])
         self.action_step = self.scale_step(action[1])
@@ -374,7 +377,7 @@ class HsjaGamesCIFAR(gym.Env):
         # print(self.action_grad)
         self.action_trans = action[3:]
         # self.action_trans = [-2,-2,-2,-2,-2,-2]
-        # self.action_trans = [1,-2,0.6,-2,1,1]
+        # self.action_trans = [-0.002,-2,-2,-2,-2,-2,0.001]
         # self.action_trans = [2,2,2,2,2,2]
         
         # Setting actions according to vanilla HSJA
@@ -432,25 +435,6 @@ class HsjaGamesCIFAR(gym.Env):
         info = self.get_info()
         return obs, r, self.done, info
 
-    # def observation_int(self, logits, query):
-    #     # Intercept the last query, adversarial or benign
-    #     probs = torch.nn.functional.softmax(logits, dim=1)
-    #     # print(type(query))
-    #     # index = self.queues.addQuery(query.unsqueeze(3), probs)
-    #     index = self.queues.addQuery(query, probs)
-    #     # print(self.next, index+1)
-    #     obs = self.queues.getState(index)
-    #     obs = np.nan_to_num(obs, nan=0.0, posinf=1, neginf=0)
-    #     # print(self.benign)
-    #     # print(bucketIndex)
-    #     lastStep = self.queues.getLastStepQueue(index)
-    #     # if self.iter > 1 and (self.past == 0 or self.past == 1):
-    #     #     if index == 1:
-    #     #         print(lastStep, self.phase, self.next, "adv")
-    #     # print(lastStep)
-    #     origin = self.queues.getOriginQueue(index)
-
-    #     return obs, index, lastStep, origin
     
     def obs_int(self, logits, query, label):
         # Intercept the last query, adversarial or benign
@@ -478,6 +462,9 @@ class HsjaGamesCIFAR(gym.Env):
         # print("STATE", obs[0:6], obs[25:31], obs[50:60])
         # origin = self.chain.getOriginQueue(1)
         # print(lastStep)
+        
+        obs = np.nan_to_num(obs, nan=0.0, posinf=1, neginf=0)
+
         return obs, span
     
     def obs_adv(self):
@@ -497,7 +484,7 @@ class HsjaGamesCIFAR(gym.Env):
             observation.append(np.float32(0.0))
         else:
             # Use dist in place of moving dist
-            # print(np.mean(self.alignment), np.mean(self.blign), self.action_trans)
+            # print(np.mean(self.alignment), np.mean(self.blign), np.mean(self.evaded), self.action_trans)
             loc = self.dist / self.gap
             self.dist_moving = self.dist_moving * 0.2 + (loc) * 0.8
             slope = self.dist_moving - loc
@@ -514,7 +501,7 @@ class HsjaGamesCIFAR(gym.Env):
             observation.append(slope)
             observation.append(self.gain/self.gap)
             
-            observation = np.nan_to_num(observation, nan=0.0, posinf=1, neginf=0)
+        observation = np.nan_to_num(observation, nan=0.0, posinf=1, neginf=0)
             
         return observation
        
@@ -530,6 +517,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.best_candidate = best_advs
         self.bloc = dist
         self.blign = []
+        self.evaded = []
         # self.bcand = self.best_advs
     
     def binary_query(self):
@@ -555,6 +543,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.is_bog, _ = self.is_adversarial(og.to(device))
         # self.blign.append(1) if self.is_adv == self.is_og else self.blign.append(-1)
         self.is_adv = self.is_adv.cpu().numpy()[0]
+        self.is_bog = self.is_bog.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.iter += 1
         # print(self.is_adv)
@@ -616,6 +605,7 @@ class HsjaGamesCIFAR(gym.Env):
         self.is_og, _ = self.is_adversarial(og.to(device))
         # self.alignment.append(1) if self.is_adv == self.is_og else self.alignment.append(-1)
         self.is_adv = self.is_adv.cpu().numpy()[0]
+        self.is_og = self.is_og.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         # print(self.is_adv)
         self.iter += 1
@@ -631,7 +621,7 @@ class HsjaGamesCIFAR(gym.Env):
         else:
             # print('done')
             # self.avg_adv.append(1) if self.is_adv else self.avg_adv.append(0)
-            self.alignment.append(1) if self.is_adv == self.is_og else self.alignment.append(-1)
+            self.alignment.append(1) if self.is_adv == self.is_og.item() else self.alignment.append(-1)
             self.multipliers_list.append(ep.ones(self.best_advs,1) if self.is_adv else -ep.ones(self.best_advs,1))
             multipliers = ep.stack(self.multipliers_list, 0)
             # print(multipliers)
@@ -789,6 +779,15 @@ class HsjaGamesCIFAR(gym.Env):
         a = np.mean(self.alignment)
         b = np.mean(self.blign)
         return a + b
+    
+    def reward10(self):
+        return self.reward3() + self.reward9()
+    
+    def reward11(self):
+        return np.mean(self.evaded)
+    
+    def reward12(self):
+        return self.reward9() + np.mean(self.evaded)
 
     def reward_adv(self, reward_nr):
         reward = 0
@@ -812,7 +811,13 @@ class HsjaGamesCIFAR(gym.Env):
             reward = self.reward8()
         elif reward_nr == 9:
             reward = self.reward9()
-
+        elif reward_nr == 10:
+            reward = self.reward10()
+        elif reward_nr == 11:
+            reward = self.reward11()
+        elif reward_nr == 12:
+            reward = self.reward12()
+            
         return np.reshape(reward, (1,))
 
     def get_pair(self):
@@ -852,52 +857,7 @@ class HsjaGamesCIFAR(gym.Env):
             theta = 1 / (self.dim ** 2)
             result = theta * self.dist 
         return result
-    
-    # def apply_transforms(self, sample, action):
 
-    #     # sample = sample.transpose(1,2,0)
-              
-    #     # trs = [transforms.ToTensor()]
-    #     trs = []
-    #     # brightness & contrast
-    #     if action[0] > 0:
-    #         a = action[0]/4
-    #         trs.append(transforms.ColorJitter(brightness=a, contrast=a))
-    #     # rotate
-    #     if action[1] > 0:
-    #         trs.append(transforms.RandomAffine(degrees=action[1]*90))
-    #     # # sharpness
-    #     # if action[2] > 0:
-    #     #     a = (action[2]/2) + 0.8
-    #     #     trs.append(transforms.RandomAdjustSharpness(a,p=1))
-    #     # crop
-    #     if action[2] > 0:
-    #         a = action[2]/10
-    #         trs.append(transforms.RandomResizedCrop(size=(32,32), scale=(0.8 - a, 0.8 + a)))
-    #     # translate
-    #     if action[3] > 0:
-    #         a = action[3]/10
-    #         trs.append(transforms.RandomAffine(degrees=0, translate=(a, a)))
-
-    #     # plt.imshow(sample)
-    #     # plt.show()       
-
-
-    #     # compose
-    #     apply = transforms.Compose(trs)
-    #     sample = apply(sample)
-                
-    #     # scale
-    #     if action[4] > 0:
-    #         a = action[4]/10
-    #         sc = np.random.uniform(-a, a)
-    #         sample = sample*(1+sc)
-    #         sample = torch.clamp(sample, 0, 1)
-
-    #     # plt.imshow(sample.numpy().transpose(1,2,0))
-    #     # plt.show()
-       
-    #     return sample
 
     def apply_transforms(self, sample, action):
 
@@ -921,7 +881,7 @@ class HsjaGamesCIFAR(gym.Env):
         # perspective
         if action[4] > 0:
             a = action[4]/4
-            a = np.random.uniform(a/2, a)*90
+            a = np.random.uniform(a/2, a)
             trs.append(transforms.RandomPerspective(distortion_scale=a, p=1))
         # rotate
         if action[5] > 0:
