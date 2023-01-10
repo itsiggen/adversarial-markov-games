@@ -57,7 +57,7 @@ class BagsGamesCIFAR(gym.Env):
         self.radv = radv
         self.intercept = intercept
         self.scale = scale
-        self.chain = Chain(nrQueues=3, dataset='cifar')
+        self.chain = Chain(nrQueues=3, simemb=cont, dataset='cifar')
         self.contrasts = Contrasts()
         self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
         acts = 9 if self.adaptive == 3 else 4
@@ -201,7 +201,7 @@ class BagsGamesCIFAR(gym.Env):
     
         # Return observation for interceptor as it's the first agent to move
         # obs, ix, self.lastStep, self.alt = self.observation_int(self.logits, self.best_advs)
-        obs, self.span = self.obs_int(self.logits, self.best_advs)
+        obs, self.span = self.obs_int(self.logits, self.best_advs, 1)
         
         return obs
 
@@ -344,12 +344,14 @@ class BagsGamesCIFAR(gym.Env):
         # generate new advarsarial candidate
         self.candidate = self.generate_boundary_sample(self.wanted_point, self.best_advs, self.x_mask, self.action_source,
                                                      self.action_spherical, self.action_perlin)
-        cand = self.candidate
+        cand = torch.tensor(self.candidate)
         # print(type(self.candidate), type(self.best_advs), type(self.wanted_point))
         
         # apply transformations
         if self.adaptive == 3:
+            # action[4:] = np.random.uniform(-2, 2, 5)
             cand = self.apply_transforms(cand, action[4:])
+            # print(action[4:])
         cand_normed = self.normalize(cand)
         # cand = self.normalize(torch.tensor(self.candidate))
         self.is_adv, self.logits = self.is_adversarial(ep.astensor(cand_normed.unsqueeze(0)))
@@ -360,7 +362,7 @@ class BagsGamesCIFAR(gym.Env):
         # wher the final decision on is_adv is made
             
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, self.candidate)
-        obs, self.span = self.obs_int(self.logits, cand.numpy())
+        obs, self.span = self.obs_int(self.logits, cand.numpy(), 1)
         # r = self.reward_int(self.queues.getStepSizeQueue(index), self.candidate, self.rewarder)
         r = self.reward_int(self.chain.getStepSizeQueue(0), self.candidate, self.rint)
         # info = self.get_info()
@@ -375,7 +377,7 @@ class BagsGamesCIFAR(gym.Env):
         self.logits = self.model(self.normalize(torch.tensor(candidate).unsqueeze(0)))
         # self.logits = self.model(torch.tensor(candidate).unsqueeze(0).unsqueeze(1))
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
-        obs, self.span = self.obs_int(self.logits, candidate)
+        obs, self.span = self.obs_int(self.logits, candidate, 0)
         # r = self.reward_int(self.queues.getStepSizeQueue(index), candidate, self.rewarder)
         r = self.reward_int(self.chain.getStepSizeQueue(0), candidate, self.rint)
         # info = self.get_info()
@@ -398,7 +400,7 @@ class BagsGamesCIFAR(gym.Env):
 
     #     return obs, index, lastStep, origin
     
-    def obs_int(self, logits, query):
+    def obs_int(self, logits, query, label):
         # Intercept the last query, adversarial or benign
         probs = torch.nn.functional.softmax(logits, dim=1)
         span = self.chain.checkQuery(query, probs)
@@ -516,8 +518,8 @@ class BagsGamesCIFAR(gym.Env):
                 
         elif self.past == 2:
             # print(self.check_bn)
-            r = 1 if self.check_bn else -1
-            # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
+            # r = 1 if self.check_bn else -1
+            r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
             
         return np.reshape(r, (1,))
 
@@ -575,9 +577,10 @@ class BagsGamesCIFAR(gym.Env):
             
     def apply_transforms(self, sample, action):
 
-        sample = sample.transpose(1,2,0)
+        # sample = sample.transpose(1,2,0)
               
-        trs = [transforms.ToTensor()]
+        # trs = [transforms.ToTensor()]
+        trs = []
         # brightness & contrast
         if action[0] > 0:
             a = action[0]/4
@@ -633,6 +636,7 @@ class BagsGamesCIFAR(gym.Env):
                 inn = True
         else:
             inn = min(span) > action
+            # inn = True
         # ACHTUNG! before it went
         # alt = self.chain.addQuery(inn)
         if self.train:

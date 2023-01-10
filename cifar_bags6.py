@@ -44,7 +44,7 @@ def objective(trial):
     rint = trial.suggest_categorical('rint', [3,4,5])
     radv = 5
     scale = 20
-    ts = trial.suggest_categorical('ts', [1e6,2e6])
+    ts = trial.suggest_categorical('ts', [6e5,1e6,2e6])
     
     # Create environment
     env = gym.make("BagsGamesCIFAR-v0",
@@ -141,8 +141,8 @@ def objective(trial):
                     radv=radv)
     
     # Load the trained agents
-    interceptor = RPPO.load("mods/games/bags6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/cbags6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/cbags6adv.pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 
@@ -173,10 +173,12 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, scale, rew):
+def test(num, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
+    scale = 20
+    cont = 2
     defended = False
     seed = 2
 
@@ -188,13 +190,14 @@ def test(num, scale, rew):
                     dataset=dataset,
                     defended=defended,
                     scale=scale,
+                    cont=cont,
                     train=False,
                     rint=rew,
                     radv=1)
     
 
-    interceptor = RPPO.load("mods/games/bags6int_" + str(num) + ".pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/bags6adv.pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/cbags6int_" + str(num) + ".pt", envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/cbags6adv.pt" , envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
     
@@ -220,16 +223,14 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("0"), type=str, help="Agent to load")
-    parser.add_argument('--scale', default=float(8), type=float, help="Intercept")
-    parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("6"), type=str, help="Agent to load")
+    parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
-        mean_eps = test(args.load, args.scale, args.rew)
+        mean_eps = test(args.load, args.rew)
     # train(args)

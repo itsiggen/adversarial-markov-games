@@ -53,7 +53,7 @@ class Contrasts():
 
 
 class SimEnc():
-    def __init__(self, dataset):
+    def __init__(self, simemb, dataset):
         self.dt = dataset
         if self.dt == 'mnist':
             # self.similarityModel = load_model('models/MNISTencoder.h5', compile=False)
@@ -63,7 +63,10 @@ class SimEnc():
         elif self.dt == 'cifar':
             # self.similarityModel = load_model('models/CIFARencoder.pt', compile=False)
             self.similarityModel = cifarNet()
-            self.similarityModel.load_state_dict(torch.load('models/CIFARembedding.pt', map_location=device))
+            if simemb == 2:
+                self.similarityModel.load_state_dict(torch.load('models/CIFARembedding_trs.pt', map_location=device))
+            else:
+                self.similarityModel.load_state_dict(torch.load('models/CIFARembedding.pt', map_location=device))
             self.similarityModel.eval()
         
     # def getSimilarityEncoding(self, query):
@@ -86,8 +89,8 @@ class SimEnc():
 
 
 class Chain():
-    def __init__(self, nrQueues=3, sizeState=30, train=True, dataset='mnist'):
-        self.simenc = SimEnc(dataset)
+    def __init__(self, nrQueues=3, sizeState=30, train=True, simemb=1, dataset='mnist'):
+        self.simenc = SimEnc(simemb, dataset)
         self.dim = 28 if dataset=='mnist' else 32
         self.shape = [28,28] if dataset=='mnist' else [3,32,32]
         self.sizeState = sizeState
