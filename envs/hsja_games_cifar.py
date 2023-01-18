@@ -107,7 +107,7 @@ class HsjaGamesCIFAR(gym.Env):
             # if defended:
             #     self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
             # else:
-            self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_t.pt', map_location=device))
+            self.contrast_model.load_state_dict(torch.load('models/contrasts/chsja_emb_v.pt', map_location=device))
         elif cont == 0:
             pass
         self.contrast_model.eval()
@@ -122,7 +122,11 @@ class HsjaGamesCIFAR(gym.Env):
     def scale_delta(self, v):
         # Delta from [-2,2] to [0.0001,2.0001]
         # base = ((v + 2) / self.scale) + 0.0001
-        return (v + 3) * self.scale
+        if self.adaptive == 3:
+            base = (v + 3) * self.scale
+        else:
+            base = ((v + 2) / self.scale) + 0.0001
+        return base
         # return base * self.dist
         # return v + 2.00001 # to [0.00001,4.00001]
     
@@ -365,7 +369,8 @@ class HsjaGamesCIFAR(gym.Env):
         # self.action_delta = 0.1*self.dist if self.reps == 1 else self.scale_delta(action[0])*self.dist
         
         # self.action_delta = self.scale_delta(action[0])
-        self.action_delta = self.scale_delta(action[0])*self.select_delta(self.dist)
+        self.action_delta = self.scale_delta(action[0])
+        if self.adaptive == 3: self.action_delta *= self.select_delta(self.dist)
         
         # if self.reps == 1: self.action_delta = 0.1*self.dist
         # self.action_step = 1.0 if self.reps == 1 else self.scale_step(action[1])
