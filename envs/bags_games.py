@@ -30,7 +30,7 @@ class BagsGames(gym.Env):
         defended = False,
         adaptive: int = 0,
         cont: int = 2,
-        vanilla = False,
+        vanilla = True,
         ratio_benign = 0.5,
         train = True,
         rint = 1,
@@ -443,8 +443,8 @@ class BagsGames(gym.Env):
         # History of success/fail, goal and/or distance to goal, (history of step sizes)
         
         # Use dist in place of moving dist
-        self.dist_moving = self.dist_moving * 0.8 + (self.dist / self.gap) * 0.2
         loc = self.dist / self.gap
+        self.dist_moving = self.dist_moving * 0.8 + (loc) * 0.2
         slope = self.dist_moving - loc
         
         observation = []
@@ -620,9 +620,9 @@ class BagsGames(gym.Env):
             action = action[0]
         if self.adaptive == 0:
             if self.vanilla:
-                inn = True
-            else:
                 inn = min(span) > 0.05*self.intercept
+            else:
+                inn = True
         elif self.adaptive == 1:
             if self.vanilla:
                 inn = min(span) > 0.05*self.intercept

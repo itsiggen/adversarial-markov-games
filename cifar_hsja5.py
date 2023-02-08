@@ -170,7 +170,7 @@ def objective(trial):
     del adversary
     del benign
     
-    return mean_eps, mean_acc
+    return mean_eps
     
 def check_full(agents, stt):
     for i in range(2):
@@ -244,7 +244,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
-        study = optuna.create_study(directions=['maximize', 'maximize'])
+        study = optuna.create_study(direction='minimize')
         study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
         mean_eps, mean_acc = test(args.load, args.scale, args.rew)

@@ -15,30 +15,31 @@ dataset = datasets.CIFAR10('data', train=False, transform=transform, download=Tr
 
 def objective(trial):
     """
-    TA-AD: Vanilla Adversary - Adaptive Defense
+    AA-AD: Vanilla Adversary - Adaptive Defense
     """
     
-    print('Training CBAGS-6: TA-AD..')
+    print('Training CHSJA-7: AA-AD..')
     
     eval_steps = 5000
     adaptive = 3 # int adaptive
-    stt = 0 # interceptor is learning
+    stt = 2 # both is learning
     ratio = 0.5
     defended = False
-    cont = 2
+    cont = 1
     seed = 2
     
     steps = trial.suggest_categorical('steps', [1000,2500,4000])
-    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
-    buffer = 2048
-    batch = trial.suggest_categorical('batch', [32,64,128])
+    lra = trial.suggest_categorical('lra', [0.003,0.001,0.0001])
+    lri = trial.suggest_categorical('lri', [0.003,0.001,0.0001])
+    buffer = trial.suggest_categorical('buffer', [256,512])
+    batch = 32
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = 0.99
     ent_coef = 0
     vf_coef = 0.5
     scale = 4
     rint = trial.suggest_categorical('rint', [2,4,6])
-    radv = 8
+    radv = trial.suggest_categorical('reward', [7,8])
     ts = trial.suggest_categorical('ts', [6e5,12e5])
 
     # Create environment
@@ -61,7 +62,7 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lr,
+                learning_rate=lri,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
                 ent_coef=ent_coef,
@@ -70,7 +71,20 @@ def objective(trial):
                 seed=seed,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
-    adversary = RPPO.load("mods/games/chsja5adv_7.pt", env, "adversary", seed)
+    adversary = RPPO(policy="MlpPolicy",
+                env=env,
+                agent='adversary',
+                n_steps=buffer,
+                batch_size=batch,
+                n_epochs=epochs,
+                learning_rate=lra,
+                gamma=round(gamma,2),
+                tensorboard_log=None,
+                ent_coef=ent_coef,
+                vf_coef=vf_coef,
+                verbose=0,
+                seed=seed,
+                policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
     benign = RandomAgent(env=env)
       
@@ -127,8 +141,8 @@ def objective(trial):
 
     # Save the trained agents
     print("Saving models...")
-    interceptor.save("mods/games/chsja6int_" + str(trial.number) + ".pt")
-    adversary.save("mods/games/chsja6adv.pt")
+    interceptor.save("mods/games/chsja7int_" + str(trial.number) + ".pt")
+    adversary.save("mods/games/chsja7adv_" + str(trial.number) + ".pt")
     
     # Make evaluation env
     seed = 3
@@ -144,8 +158,8 @@ def objective(trial):
                     rint=rint,
                     radv=radv)
     
-    interceptor = RPPO.load("mods/games/chsja6int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/chsja6adv.pt", envv, "adversary", seed)
+    interceptor = RPPO.load("mods/games/chsja7int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/chsja7adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
                 
     benign = RandomAgent(env=envv)
 
@@ -177,14 +191,14 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, rew):
+def test(num, r1, r2):
     eval_steps = 5000
-    adaptive = 2 # int adaptive 
+    adaptive = 3 # both adaptive 
     ratio = 0.5
     defended = False
-    scale = 2
+    scale = 4
+    cont = 1
     seed = 2
-    cont = 2
 
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
@@ -197,16 +211,14 @@ def test(num, rew):
                     train=False,
                     test=True,
                     scale=scale,
-                    rint=rew,
-                    radv=1,
+                    rint=r1,
+                    radv=r2,
                     )
     
     # Load the trained agents
-    interceptor = RPPO.load("mods/games/chsja6int_" + str(num) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/chsja6adv.pt", envv, "adversary", seed)
-
+    interceptor = RPPO.load("mods/games/chsja7int_" + str(num) + ".pt" , envv, "interceptor", seed)
+    adversary = RPPO.load("mods/games/chsja7adv_" + str(num) + ".pt" ,  envv, "adversary", seed)
     benign = RandomAgent(env=envv)
-
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
@@ -217,7 +229,7 @@ def test(num, rew):
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print('chsja6:', res, c, d)
+    print('chsja7:', res, c, d)
         
     return mean_eps, mean_acc
 
@@ -231,7 +243,9 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("18"), type=str, help="Model to load")
-    parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")
+    parser.add_argument('--r1', default=int(2), type=bool, help="R1 used")
+    parser.add_argument('--r2', default=int(8), type=bool, help="R2 used")
+
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.

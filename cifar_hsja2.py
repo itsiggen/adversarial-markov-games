@@ -9,7 +9,7 @@ from envs.hsja_games_cifar import HsjaGamesCIFAR
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
 
 eval_steps = 5000
 adaptive = 0 # non-adaptive, just stateful defense 
@@ -27,6 +27,7 @@ env = gym.make("HsjaGamesCIFAR-v0",
                defended=defended,
                cont=cont,
                train=False,
+               test=True,
                rint=1,
                radv=1,
                intercept=1)
