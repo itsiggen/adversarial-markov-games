@@ -79,7 +79,7 @@ n_steps = 0
     
 for timestep in tqdm(range(total_timesteps), disable=False):
     # Check if a rollout buffer has been filled and train
-    check_full(agents, stt)
+    check_full(agents, 1)
     # Store previous move
     prev = curr
     # next agent moves
