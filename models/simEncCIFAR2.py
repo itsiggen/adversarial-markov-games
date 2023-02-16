@@ -305,7 +305,7 @@ if __name__ == "__main__":
     num_classes = 10
     epochs = 10
 
-    transform = transforms.Compose([transforms.ToTensor())
+    transform = transforms.Compose(transforms.ToTensor())
 
     train_dataset = datasets.CIFAR10('../data', train=True, transform=transform, download=True)
     test_dataset = datasets.CIFAR10('../data', train=False, transform=transform, download=True)

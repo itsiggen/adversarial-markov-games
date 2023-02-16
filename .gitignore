@@ -10,3 +10,5 @@ test.py
 test_envgames.py
 train_bags_adv.py
 __pycache__/
+.DS_Store
+.DS_Store
