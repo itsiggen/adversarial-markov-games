@@ -31,8 +31,13 @@ for env in list(gym.envs.registry.env_specs):
      if 'HsjaGamesCIFAR-v0' in env:
           del gym.envs.registry.env_specs[env]
 for env in list(gym.envs.registry.env_specs):
+     if 'BagsTransCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'HsjaTransCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
      if 'TestGames-v0' in env:
-          # print('Remove {} from registry'.format(env))
           del gym.envs.registry.env_specs[env]
 
 
@@ -84,6 +89,16 @@ register(
 register(
     id='HsjaGamesCIFAR-v0',
     entry_point='envs.hsja_games_cifar:HsjaGamesCIFAR'
+    )
+
+register(
+    id='BagsTransCIFAR-v0',
+    entry_point='envs.bags_trans_cifar:BagsTransCIFAR'
+    )
+
+register(
+    id='HsjaTransCIFAR-v0',
+    entry_point='envs.hsja_trans_cifar:HsjaTransCIFAR'
     )
 
 register(
