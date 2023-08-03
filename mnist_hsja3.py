@@ -9,50 +9,41 @@ from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.hsja_games_cifar import HsjaGamesCIFAR
+from envs.hsja_skip import HsjaSkip
 from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
+transform=transforms.ToTensor()
+dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
 
 def objective(trial):
     
-    adaptive = 1 # adv adaptive, plus stateful defense
+    adaptive = 1 # adv adaptive, plus stateful defense 
     ratio = 0.5
-    vanilla = True
-    stt = 1 # adversary is learning
     cont = 0
     inter = 1
-    defended = False
+    defended = True
     seed = 2
     
     eval_steps = 5000
-    steps = trial.suggest_categorical('steps', [600,1000,3000])
-    # steps = 300
-    buffer = trial.suggest_categorical('buffer', [64,128,256,1024])
-    batch = trial.suggest_categorical('batch', [16,32])
-    # batch = 32
-    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
+    steps = trial.suggest_categorical('steps', [600,1000,2500])
+    buffer = 1024
+    batch = 32
+    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0001])
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
     ent_coef = 0
-    scale = trial.suggest_categorical('scale', [2,4,8])
-    # scale = 8
-    radv = trial.suggest_categorical('reward', [2,3,4,5,6,7,8])
-    ts = trial.suggest_categorical('ts', [6e5,1e6])
-    # ts = 100
+    radv = trial.suggest_categorical('reward', [1,2,3,4,5])
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
 
 
     # Create environment
-    env = gym.make("HsjaGamesCIFAR-v0",
+    env = gym.make("HsjaGames-v0",
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
                    dataset=dataset,
-                   scale=scale,
                    train=False,
-                   vanilla=vanilla,
                    cont=cont,
                    rint=5,
                    radv=radv,
@@ -95,7 +86,7 @@ def objective(trial):
         
     for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
-        check_full(agents, stt)
+        check_full(agents)
         # Store previous move
         prev = curr
         # next agent moves
@@ -137,19 +128,16 @@ def objective(trial):
     
     print("Saving models...")
 
-    adversary.save("mods/chsja3adv_" + str(trial.number) + ".pt")
+    adversary.save("mods/hsjaa3adv_" + str(trial.number) + ".pt")
 
     seed = 3
-    envv = gym.make("HsjaGamesCIFAR-v0",
+    envv = gym.make("HsjaGames-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
                     dataset=dataset,
-                    scale=scale,
                     defended=defended,
                     train=False,
-                    test=True,
-                    vanilla=vanilla,
                     cont=cont,
                     rint=5,
                     radv=radv,
@@ -157,11 +145,11 @@ def objective(trial):
     
     # Load the trained agents
     interceptor = RPPO.load("mods/games/hsja4int_8.pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/chsja3adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
+    adversary = RPPO.load("mods/hsjaa3adv_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
                 
     benign = RandomAgent(env=envv)
         
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=15)
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=30)
     # envv.gstates.save("mods/data/hsja4eval_" + str(trial.number) + ".csv")
     
     res = [mean_radv, std_radv, mean_eps, start_eps, mean_acc]
@@ -169,52 +157,45 @@ def objective(trial):
     
     return mean_eps
 
-def check_full(agents, stt):
+def check_full(agents):
     for i in range(2):
+        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
-        # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
-            if stt == i or stt == 2:
-                # print(agents[i].agent)
-                agents[i].train()
+            agents[i].train()
             agents[i].reset_buffer()
 
 def reset():
     return False, 1, 0, 0
 
 
-def test(num, rew, scale):
+def test(num, rew):
     eval_steps = 5000
     adaptive = 1
-    vanilla = True
-    defended = False
+    defended = True
     ratio = 0.5
     cont = 0
     seed = 2
     inter = 1
     
     # Make evaluation env
-    envv = gym.make("HsjaGamesCIFAR-v0",
+    envv = gym.make("HsjaGames-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
                     adaptive=adaptive,
-                    vanilla=vanilla,
                     dataset=dataset,
-                    scale=scale,
                     defended=defended,
                     cont=cont,
                     train=False,
-                    test=True,
                     rint=rew,
                     radv=1,
                     intercept=inter)
         
     
     interceptor = RPPO.load("mods/games/hsja4int_8.pt", envv, "interceptor", seed)
-    # adversary = RPPO.load("mods/chsja3adv_" + str(num) + ".pt" , envv, "adversary", seed)
-    adversary = RPPO.load("mods/chsja3adv_" + str(num) + ".pt" , envv, "adversary", seed)
-    
+    adversary = RPPO.load("mods/hsjaa3adv_" + str(num) + ".pt" , envv, "adversary", seed)
+
     benign = RandomAgent(env=envv)
     
     
@@ -239,15 +220,15 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
+    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("27"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=int(2), type=int, help="Scale")
-    parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")
+    parser.add_argument('--load', default=str("5"), type=str, help="Model to load")
+    parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=30, gc_after_trial=True)
+        study.optimize(objective, n_trials=20, gc_after_trial=True)
     else:
-        mean_eps = test(args.load, args.rew, args.scale)
+        mean_eps = test(args.load, args.rew)
     # train(args)

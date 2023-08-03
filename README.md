@@ -12,4 +12,3 @@ other through the competitive, zero-sum game they form.
 ## Use
 
 We provide the raw source code we experimented with. The various scenarios we evaluated are in the parent directory, while the different RL environments are defined in the envs folder. Please note that this repository is a Work in Progress as restructuring and improvements are actively being made.
-

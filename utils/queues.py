@@ -1,11 +1,8 @@
 import numpy as np
 import torch
 from scipy.spatial import distance
-from scipy.special import kl_div, rel_entr
-from tensorflow.keras.models import Sequential, load_model
 from models.simEncMNIST import mnistNet
 from models.simEncCIFAR import cifarNet
-import tensorflow as tf
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")

@@ -9,13 +9,10 @@ from foolbox.attacks.base import get_is_adversarial
 from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.queues import l2
-# import utils.pnoise as pn
 import utils.perlin as pn
-from models.loader import load
 from torchvision import transforms
 from collections import deque, OrderedDict
 from models.trainCIFARtorch import resnet20
-import matplotlib.pyplot as plt
 import math
 import pandas as pd
 

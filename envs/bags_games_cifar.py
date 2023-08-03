@@ -315,6 +315,7 @@ class BagsGamesCIFAR(gym.Env):
         
         # self.converged = self.dist < self.epsilon
         # if self.converged or self.iter >= self.steps:
+        
         if self.iter >= self.steps:
             self.done = True
         
@@ -372,6 +373,8 @@ class BagsGamesCIFAR(gym.Env):
         
     def step_ben(self, action):
         self.queries += 1
+        if self.queries >= self.steps and self.ratio_benign == 1:
+            self.done = True
         candidate, self.label = self.get_benign(action)
         # candidate = self.normalize(torch.tensor(candidate).unsqueeze(0))
         self.logits = self.model(self.normalize(torch.tensor(candidate).unsqueeze(0)))
