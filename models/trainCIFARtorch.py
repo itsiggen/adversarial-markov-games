@@ -98,7 +98,7 @@ class ResNet(nn.Module):
 
 class PGDAttack(object):
     def __init__(self, model=None, epsilon=0.03, k=20, a=0.007, 
-        random_start=True, device='cpu', mode = 'l2'):
+        random_start=True, device='cpu', mode='linf'):
         """
         Attack parameter initialization. The attack performs k steps of size a,
         while always staying within an Linf/L2 distance from the initial point.
@@ -270,7 +270,7 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
     
     # define adversary
-    adversary = PGDAttack(device='cuda', epsilon=0.5, k=20, a=0.01)
+    adversary = PGDAttack(device='cuda', epsilon=0.5, k=20, a=0.01, mode='l2')
 
     if args.half:
         model.half()

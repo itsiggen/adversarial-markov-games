@@ -35,13 +35,12 @@ class Net(nn.Module):
         # output = F.log_softmax(x, dim=1)
         return output
 
-class LinfPGDAttack(object):
-    def __init__(self, model=None, epsilon=0.3, k=40, a=0.01, 
-        random_start=True, device='cpu'):
+class PGDAttack(object):
+    def __init__(self, model=None, epsilon=0.03, k=20, a=0.007, 
+        random_start=True, device='cpu', mode='linf'):
         """
-        Attack parameter initialization. The attack performs k steps of
-        size a, while always staying within epsilon from the initial
-        point.
+        Attack parameter initialization. The attack performs k steps of size a,
+        while always staying within an Linf/L2 distance from the initial point.
         https://github.com/MadryLab/mnist_challenge/blob/master/pgd_attack.py
         """
         self.model = model
@@ -49,6 +48,7 @@ class LinfPGDAttack(object):
         self.k = k
         self.a = a
         self.device = device
+        self.mode = mode
         self.rand = random_start
         self.loss_fn = nn.CrossEntropyLoss()
 
@@ -68,16 +68,24 @@ class LinfPGDAttack(object):
             X_var.requires_grad=True
             y_var = torch.LongTensor(y).to(self.device)
 
-            # print(next(self.model.parameters()).device)
             scores = self.model(X_var)
             loss = self.loss_fn(scores, y_var)
             loss.backward()
             grad = X_var.grad.data.cpu().numpy()
 
-            X += self.a * np.sign(grad)
-
-            X = np.clip(X, X_nat - self.epsilon, X_nat + self.epsilon)
-            X = np.clip(X, 0, 1) # ensure valid pixel range
+            if self.mode == 'l2':
+                perturbation = self.a * grad / np.linalg.norm(grad.flatten(), ord=2)
+                X += perturbation
+                delta = X - X_nat
+                delta = np.clip(delta, -self.epsilon, self.epsilon)
+                X = X_nat + delta
+            elif self.mode == "linf":
+                X += self.a * np.sign(grad)
+                X = np.clip(X, X_nat - self.epsilon, X_nat + self.epsilon)
+            else:
+                print("select a proper lp norm")
+                
+        X = np.clip(X, 0, 1) # ensure valid pixel range
 
         return X
     
@@ -101,7 +109,7 @@ def adv_train(X, y, model, adversary):
 
 def train(args, model, device, train_loader, criterion, optimizer, epoch):
     model.train()
-    adversary = LinfPGDAttack(device=device)
+    adversary = PGDAttack(device='cuda', epsilon=0.5, k=20, a=0.01, mode='l2')
     for batch_idx, (data, target) in enumerate(train_loader):
         x, y = data.to(device), target.to(device)
         optimizer.zero_grad()
