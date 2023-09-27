@@ -96,13 +96,12 @@ class ResNet(nn.Module):
         return out
 
 
-class LinfPGDAttack(object):
+class PGDAttack(object):
     def __init__(self, model=None, epsilon=0.03, k=20, a=0.007, 
-        random_start=True, device='cpu'):
+        random_start=True, device='cpu', mode = 'l2'):
         """
-        Attack parameter initialization. The attack performs k steps of
-        size a, while always staying within epsilon from the initial
-        point.
+        Attack parameter initialization. The attack performs k steps of size a,
+        while always staying within an Linf/L2 distance from the initial point.
         https://github.com/MadryLab/mnist_challenge/blob/master/pgd_attack.py
         """
         self.model = model
@@ -110,6 +109,7 @@ class LinfPGDAttack(object):
         self.k = k
         self.a = a
         self.device = device
+        self.mode = mode
         self.rand = random_start
         self.loss_fn = nn.CrossEntropyLoss()
 
@@ -129,16 +129,24 @@ class LinfPGDAttack(object):
             X_var.requires_grad=True
             y_var = torch.LongTensor(y).to(self.device)
 
-            # print(next(self.model.parameters()).device)
             scores = self.model(X_var)
             loss = self.loss_fn(scores, y_var)
             loss.backward()
             grad = X_var.grad.data.cpu().numpy()
 
-            X += self.a * np.sign(grad)
-
-            X = np.clip(X, X_nat - self.epsilon, X_nat + self.epsilon)
-            X = np.clip(X, 0, 1) # ensure valid pixel range
+            if self.mode == 'l2':
+                perturbation = self.a * grad / np.linalg.norm(grad.flatten(), ord=2)
+                X += perturbation
+                delta = X - X_nat
+                delta = np.clip(delta, -self.epsilon, self.epsilon)
+                X = X_nat + delta
+            elif self.mode == "linf":
+                X += self.a * np.sign(grad)
+                X = np.clip(X, X_nat - self.epsilon, X_nat + self.epsilon)
+            else:
+                print("select a proper lp norm")
+                
+        X = np.clip(X, 0, 1) # ensure valid pixel range
 
         return X
     
@@ -262,7 +270,7 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
     
     # define adversary
-    adversary = LinfPGDAttack(device='cuda')
+    adversary = PGDAttack(device='cuda', epsilon=0.5, k=20, a=0.01)
 
     if args.half:
         model.half()
