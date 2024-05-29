@@ -39,6 +39,30 @@ for env in list(gym.envs.registry.env_specs):
 for env in list(gym.envs.registry.env_specs):
      if 'TestGames-v0' in env:
           del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'HsjaBlacklightCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'HsjaOARSCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'BagsBlacklightCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'BagsOARSCIFAR-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'HsjaBlacklightMNIST-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'HsjaOARSMNIST-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'BagsBlacklightMNIST-v0' in env:
+          del gym.envs.registry.env_specs[env]
+for env in list(gym.envs.registry.env_specs):
+     if 'BagsOARSMNIST-v0' in env:
+          del gym.envs.registry.env_specs[env]
 
 
 register(
@@ -104,4 +128,44 @@ register(
 register(
     id='TestGames-v0',
     entry_point='envs.test_games:TestGames'
+    )
+
+register(
+    id='HsjaBlacklightCIFAR-v0',
+    entry_point='envs.hsja_blacklight_cifar:HsjaBlacklightCIFAR'
+    )
+
+register(
+    id='HsjaOARSCIFAR-v0',
+    entry_point='envs.hsja_oars_cifar:HsjaOARSCIFAR'
+    )
+
+register(
+    id='BagsBlacklightCIFAR-v0',
+    entry_point='envs.bags_blacklight_cifar:BagsBlacklightCIFAR'
+    )
+
+register(
+    id='BagsOARSCIFAR-v0',
+    entry_point='envs.bags_oars_cifar:BagsOARSCIFAR'
+    )
+
+register(
+    id='HsjaBlacklightMNIST-v0',
+    entry_point='envs.hsja_blacklight_mnist:HsjaBlacklightMNIST'
+    )
+
+register(
+    id='HsjaOARSMNIST-v0',
+    entry_point='envs.hsja_oars_mnist:HsjaOARSMNIST'
+    )
+
+register(
+    id='BagsBlacklightMNIST-v0',
+    entry_point='envs.bags_blacklight_mnist:BagsBlacklightMNIST'
+    )
+
+register(
+    id='BagsOARSMNIST-v0',
+    entry_point='envs.bags_oars_mnist:BagsOARSMNIST'
     )

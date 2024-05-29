@@ -9,11 +9,13 @@ from gym import spaces
 from foolbox.criteria import TargetedMisclassification
 from utils.utils import flatten, atleast_kd
 from utils.queues import Chain, l2, Contrasts
+from utils.statefuldefense import StatefulClassifier
 from utils.utils import get_is_adversarial
 from data.contrastive_cifar import EmbeddingNet
 from typing import List
 from models.trainCIFARtorch import resnet20
 from torchvision import transforms
+import json
 import gc
 import math
 
@@ -21,7 +23,7 @@ import math
 device = torch.device("cpu")
 np.seterr(invalid='raise')
 
-class HsjaTransCIFAR(gym.Env):
+class HsjaBlacklightCIFAR(gym.Env):
     def __init__(
         self,
         steps: int = 5000,
@@ -31,8 +33,7 @@ class HsjaTransCIFAR(gym.Env):
         gamma: float = 1.0,
         defended = False,
         adaptive: int = 0,
-        defense = 0,
-        vanilla = True,
+        vanilla = False,
         cont: int = 1,
         ratio_benign = 0.5,
         train = True,
@@ -43,7 +44,7 @@ class HsjaTransCIFAR(gym.Env):
         dataset = None,
         intercept = 1,
         ):
-        super(HsjaTransCIFAR, self).__init__()
+        super(HsjaBlacklightCIFAR, self).__init__()
 
         # Hsja Attack inits
         self.steps = steps
@@ -51,8 +52,7 @@ class HsjaTransCIFAR(gym.Env):
         self.init_grad_evals = init_gradient_eval_steps
         self.max_grad_evals = max_gradient_eval_steps
         self.gamma = gamma
-        self.adaptive = adaptive  # 0: query blinding | 1: adaptive control
-        self.defense = defense # 0: vanilla | 1: trained | 2: adaptive
+        self.adaptive = adaptive  # 0: stateful det | 1: adv adaptive | 2: int adaptive | 3: both adaptive
         self.vanilla = vanilla
         self.ratio_benign = ratio_benign
         self.train = train
@@ -64,7 +64,10 @@ class HsjaTransCIFAR(gym.Env):
         self.chain = Chain(nrQueues=3, dataset='cifar')
         self.contrasts = Contrasts()
         self.pairs = pd.read_csv('utils/pairs.csv').to_numpy()
-
+        acts = 10 if self.adaptive == 3 else 3
+        
+        # self.tt = 0
+        
         # random states for benign query and noise generation
         self.rn = np.random.RandomState(1337)
         self.rnn = np.random.RandomState(60)
@@ -79,7 +82,7 @@ class HsjaTransCIFAR(gym.Env):
 
         # Actions space
         self.action_spaces = spaces.Dict({
-            'adversary': spaces.Box(low=-2, high=2, shape=(3,), dtype=np.float32),
+            'adversary': spaces.Box(low=-2, high=2, shape=(acts,), dtype=np.float32),
             'interceptor': spaces.Box(low=-2, high=2, shape=(1,), dtype=np.float32)
             })
         
@@ -111,12 +114,50 @@ class HsjaTransCIFAR(gym.Env):
             pass
         self.contrast_model.eval()
 
+        # Initialize Blacklight defense
+        def_config = {"threshold": 0.5,
+                        "add_cache_hit": True,
+                        "reset_cache_on_hit": False,
+                        "aggregation": "closest",
+                        "action": "rejection",
+                        "state": {
+                            "type": "blacklight",
+                            "window_size": 20,
+                            "num_hashes_keep": 50,
+                            "round": 50,
+                            "step_size": 1,
+                            "num_processes": 5,
+                            "input_shape": [3,32,32],
+                            "salt": True}}
+
+        self.blacklight = StatefulClassifier(def_config)
 
         self.model = PyTorchModel(model, bounds=(0, 1), device=device)
         self.indices = [0,7999] if train else [8000,9999]
         self.dim = 32
         self.channels = 3
         self.resets = 0
+    
+    def scale_delta(self, v):
+        # Delta from [-2,2] to [0.1,2.1]
+        # base = ((v + 2) / self.scale) + 0.0001
+        if self.adaptive == 3:
+            base = ((v + 2) / 2) + 0.1
+        else:
+            base = ((v + 2) / self.scale) + 0.0001
+        return base
+        # return base * self.dist
+        # return v + 2.00001 # to [0.00001,4.00001]
+    
+    def scale_step(self, v):
+        # Jump step search from [-2,2] to [0.1,1.1]
+        return ((v + 2) / 4) + 0.1
+    
+    # try different num of grad
+    def scale_grad(self, v):
+        # Gradient estimation steps from [-2,2] to [50,200]
+        # return (((v + 2) / 4) * 250 + 50).astype(int)
+        return ((v + 2) / 4) + 0.5 # to [0.5,1.5]
 
     def scale_intercept(self, v):
         # return ((v + 2) / 4) * self.intercept
@@ -129,6 +170,7 @@ class HsjaTransCIFAR(gym.Env):
         self.iter = 0           # num of attack queries
         self.reps = 0           # num of attack reps
         self.queries = 0        # num of benign queries
+        self.det = 0            # num of detected queries
         self.repdone = 0
         self.starting_point, startLabel, self.wanted_point, originLabel = self.get_pair()
         self.startLabel = startLabel
@@ -174,8 +216,11 @@ class HsjaTransCIFAR(gym.Env):
         self.collisions = 0
         
         # no transformations for first query
-        self.action_trans = [0.204, 0.79, 0.36]
-        # self.action_trans = [-1,-1,-1]
+        # self.action_trans = [-2,-2,-2,-2,-2,-2]
+        self.action_trans = [1,-2,-2,1,1,-2,1]
+
+        # Reset Blacklight
+        self.blacklight.reset()
 
         self.is_adversarial = get_is_adversarial(self.criterion, self.model)
         
@@ -185,7 +230,12 @@ class HsjaTransCIFAR(gym.Env):
             self.best_advs = self.starting_point
 
         cand = self.normalize(self.best_advs)
-        is_adv  = self.is_adversarial(cand.unsqueeze(0))
+        is_adv, output = self.is_adversarial(cand.unsqueeze(0))
+        cache, detected = self.blacklight.forward(cand, output)
+        if detected:
+            self.det += 1
+            is_adv = False
+        
         # is_adv = self.is_adversarial(ep.astensor(cand).raw.unsqueeze(1).to(device))
         if not is_adv:
             raise ValueError("starting_point is not adversarial")
@@ -207,8 +257,6 @@ class HsjaTransCIFAR(gym.Env):
         always follows after adversary or benign, and adversary, benign or
         interceptor follows after interceptor
         """
-        # print(self.iter, self.phase)
-        # print(action)
         if self.curr == 1 or self.curr == 2:
             # Int responds to adv or ben
             self.past = self.curr
@@ -235,15 +283,14 @@ class HsjaTransCIFAR(gym.Env):
             
     def step_int(self, action):
         # Scale intercept
-        # print(self.iter)
         action = self.scale_intercept(action)
         if self.curr == 2:
             # Classify benign input
-            candid, alt = self.swap(self.span, action)
-            if candid:
-                ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
+            # candid, alt = self.swap(self.span, action)
+            if self.miss:
+                ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-2]
             else:
-                ans = alt
+                ans = np.argsort(torch.nn.functional.softmax(self.logits, dim=1))[0][-1]
             # Check if benign is labeled correctly
             # print(ans, self.label)
             self.check_bn = self.label==ans
@@ -251,21 +298,20 @@ class HsjaTransCIFAR(gym.Env):
             self.correct.append(self.check_bn)
         else:
             # Candidate remains adversarial only if outside the containment area
-            # candid = self.switch(self.lastStep, action)
-            candid, _ = self.swap(self.span, action)
-            self.evaded.append(1) if candid else self.evaded.append(0) 
-            # print(self.is_adv, candid)
-            # Is_det: if adversarial & inside containment
-            self.is_det = np.logical_and(self.is_adv, not candid)
-            # Is adv only if it actually is AND is out of containment area
-            self.is_adv = np.logical_and(self.is_adv, candid)
-            self.rew_adv = self.is_adv
+            # candid, _ = self.swap(self.span, action)
+            # self.evaded.append(1) if candid else self.evaded.append(0) 
+            # # print(self.is_adv, candid)
+            # # Is_det: if adversarial & inside containment
+            # self.is_det = np.logical_and(self.is_adv, not candid)
+            # # Is adv only if it actually is AND is out of containment area
+            # self.is_adv = np.logical_and(self.is_adv, candid)
+            # self.rew_adv = self.is_adv
+            
             # proceed according to current phase of HSJA
             self.phase_proceed()
         # roll next query, if int proceed internally to next attack query
         self.next = self.decide_next()
         self.act = action
-        self.rad = min(self.span)
         if self.next == 0:
             self.logits, cand = self.phase_query()
             # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, cand)
@@ -342,17 +388,29 @@ class HsjaTransCIFAR(gym.Env):
         self.phase = 0
         self.reps += 1
         self.queries_left = self.steps - self.iter 
-                    
+        
+        # print(action)
+        # Scale actions to proper values
+        self.action_delta = self.scale_delta(action[0])
+
+        self.action_step = self.scale_step(action[1])
+        self.action_grad = self.scale_grad(action[2])
         num_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
-        self.action_trans = action
+        self.action_grad = (num_grad * self.action_grad).astype(int)
+        self.action_trans = action[3:]
         # self.action_trans = [-2,-2,-2,-2,-2,-2]
         # self.action_trans = [-0.002,-2,-2,-2,-2,-2,0.001]
         # self.action_trans = [2,2,2,2,2,2]
         
         # Setting actions according to vanilla HSJA
-        self.action_delta = self.select_delta(self.dist)
-        self.action_grad = int(num_grad/3) if self.train else num_grad
-        self.action_step = 1/math.sqrt(self.reps)
+        if self.adaptive == 0 or self.adaptive == 2:
+            self.action_delta = self.select_delta(self.dist)
+            # self.action_grad = int(min([self.init_grad_evals * math.sqrt(self.reps), self.max_grad_evals]))
+            self.action_grad = int(num_grad/3) if self.train else num_grad
+            # self.action_grad = num_grad
+            # self.action_grad = int(num_grad/10)
+            # self.action_grad = num_grad
+            self.action_step = 1/math.sqrt(self.reps)
         
         # print(self.action_delta)
         # To force fixed number of queries, reduce gradient estimation steps if necessary
@@ -376,23 +434,22 @@ class HsjaTransCIFAR(gym.Env):
         # print(self.gap, distance)
         # Calculate the distance to target gained in the last rep
         self.gain = self.dist - distance
-        self.dist = max(distance, 1e-8)
+        self.dist = distance
         # print('distance:', self.dist)
         self.gain_moving = self.gain_moving * 0.2 + (self.gain * 0.8) / self.gap
           
     def step_ben(self, action):
         self.queries += 1
+        if self.queries >= self.steps and self.ratio_benign == 1:
+            self.done = True
         candidate, self.label = self.get_benign(action)
         self.logits = self.model(self.normalize(torch.tensor(candidate).unsqueeze(0)).to(device))
         self.logits = self.logits.cpu()
         # obs, index, self.lastStep, self.alt = self.observation_int(self.logits, candidate)
         obs, self.span = self.obs_int(self.logits, candidate, 0)
-        
-        # if (np.asarray(obs)[0:6] < 0.3).any():
-        #     self.collisions += 1
-        # print(self.collisions/self.queries)
-        # print("DEBN")
-        # r = self.reward_int(self.queues.getStepSizeQueue(index), candidate, self.rint)
+        # Feed benign to Blacklight
+        cache, self.miss = self.blacklight.forward(self.normalize(torch.tensor(candidate)).to(device), self.logits)
+
         r = self.reward_int(self.chain.getStepSizeQueue(0), candidate, self.rint)
         # Set state to benign
         self.curr = 2
@@ -401,21 +458,8 @@ class HsjaTransCIFAR(gym.Env):
 
     
     def obs_int(self, logits, query, label):
-        # Intercept the last query, adversarial or benign
-        probs = torch.nn.functional.softmax(logits, dim=1)
-        # print(np.around(np.asarray(probs), decimals=4))
-        span = self.chain.checkQuery(query, probs)
-        # trivial state for non-adaptive
-        obs, cont = self.chain.getState(2)
-        with torch.no_grad():
-            # print(cont.shape)
-            obs = self.contrast_model(cont.view(1,3,25,32,32)).detach().numpy()
-
-        self.obs = obs
-        
-        obs = np.nan_to_num(obs, nan=0.0, posinf=1, neginf=0)
-
-        return obs, span
+        # empty obs
+        return np.zeros(shape=(64,)), [0,0,0]
     
     def obs_adv(self):
         # generate observation based on the history of responses
@@ -480,18 +524,24 @@ class HsjaTransCIFAR(gym.Env):
         # plt.imshow(self.bcand.raw.squeeze(0).numpy(), cmap='gray')
         # plt.show()
         # apply transformations
-        # if self.adaptive == 3:
-        self.btrans = self.apply_transforms(self.bcand.raw, self.action_trans)
-
-        cand = self.normalize(self.btrans).unsqueeze(0)
+        if self.adaptive == 3:
+            self.btrans = self.apply_transforms(self.bcand.raw, self.action_trans)
+        else:
+            self.btrans = self.bcand.raw
+        cand = self.normalize(self.btrans)
         og = self.normalize(self.bcand.raw).unsqueeze(0)
         # cand = self.normalize(self.bcand.raw).unsqueeze(0)
 
-        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
+        self.is_adv, self.logits = self.is_adversarial(cand.unsqueeze(0).to(device))
+        cache, detected = self.blacklight.forward(cand, self.logits)
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.bcand).raw.unsqueeze(1).to(device))
         self.is_bog, _ = self.is_adversarial(og.to(device))
         # self.blign.append(1) if self.is_adv == self.is_og else self.blign.append(-1)
         self.is_adv = self.is_adv.cpu().numpy()[0]
+        if detected:
+            self.det += 1
+            self.is_adv = False
+
         self.is_bog = self.is_bog.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         self.iter += 1
@@ -543,16 +593,21 @@ class HsjaTransCIFAR(gym.Env):
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.perturbed[self.gsteps]).raw.unsqueeze(0).to(device))
         # apply transformations
         grad_cand = self.perturbed[self.gsteps].raw
-        # if self.adaptive == 3:
-        grad_trans = self.apply_transforms(grad_cand, self.action_trans)
-
-        cand = self.normalize(grad_trans).unsqueeze(0)
+        if self.adaptive == 3:
+            grad_trans = self.apply_transforms(grad_cand, self.action_trans)
+        else:
+            grad_trans = grad_cand
+        cand = self.normalize(grad_trans)
         # print(l2(grad_trans, self.perturbed[self.gsteps].raw))
         og = self.normalize(grad_cand).unsqueeze(0)
-        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
+        self.is_adv, self.logits = self.is_adversarial(cand.unsqueeze(0).to(device))
+        cache, detected = self.blacklight.forward(cand, self.logits)
         self.is_og, _ = self.is_adversarial(og.to(device))
         # self.alignment.append(1) if self.is_adv == self.is_og else self.alignment.append(-1)
         self.is_adv = self.is_adv.cpu().numpy()[0]
+        if detected:
+            self.det += 1
+            self.is_adv = False
         self.is_og = self.is_og.cpu().numpy()[0]
         self.logits = self.logits.cpu()
         # print(self.is_adv)
@@ -595,13 +650,18 @@ class HsjaTransCIFAR(gym.Env):
         self.jcand = ep.clip(self.best_advs + self.jeps * self.grad, 0, 1).raw
         # self.is_adv, self.logits = self.is_adversarial(ep.astensor(self.jcand).raw.unsqueeze(0).to(device))
         # apply transformations
-        # if self.adaptive == 3:
-        self.jtrans = self.apply_transforms(self.jcand, self.action_trans)
-        
-        cand = self.normalize(self.jtrans).unsqueeze(0)
+        if self.adaptive == 3:
+            self.jtrans = self.apply_transforms(self.jcand, self.action_trans)
+        else:
+            self.jtrans = self.jcand
+        cand = self.normalize(self.jtrans)
         # cand = self.normalize(self.jcand).unsqueeze(0)
-        self.is_adv, self.logits = self.is_adversarial(cand.to(device))
+        self.is_adv, self.logits = self.is_adversarial(cand.unsqueeze(0).to(device))
+        cache, detected = self.blacklight.forward(cand, self.logits)
         self.is_adv = self.is_adv.cpu().numpy()[0]
+        if detected:
+            self.det += 1
+            self.is_adv = False
         self.logits = self.logits.cpu()
         self.jsteps += 1
         self.iter += 1
@@ -622,60 +682,58 @@ class HsjaTransCIFAR(gym.Env):
 
     def reward_int(self, stepsize, cand, reward_nr):
         r = 0
-        if self.past == 0 or self.past == 1:
-            # averageStepsize = np.mean(np.asarray(stepsize))
-            # print(averageStepsize)
-            if reward_nr == 1:
-                # Reward keeping best_advs close to starting point
-                # r = max(-math.log((self.gap*0.1 + l2(self.starting_point, self.best_advs)) / self.gap), 0)
-                # r = abs(math.log((self.gap*0.1 + l2(self.starting_point.detach().numpy(), self.best_advs.raw.squeeze(0).numpy())) / self.gap))
-                r = 1 - 2*(l2(self.starting_point.detach().numpy(), self.best_advs.raw.squeeze(0).numpy()) / self.gap)
-            elif reward_nr == 2:
-                # reward interception + penalty/bonus on binary queries
-                r = self.act - min(self.intercept, self.rad)
-                if self.imp:
-                    r -= 2
-                else:
-                    r += 2
-            elif reward_nr == 3:
-                # penalty/bonus on binary queries
-                r = -2 if self.imp else 2
-            elif reward_nr == 4:
-                # reward interception
-                # r = -1 if self.rew_adv else 1
-                if self.rew_adv:
-                    r = max(2*(self.act - self.rad), -1)
-                else:
-                    r = max((self.act - self.rad), 0)
-            elif reward_nr == 5:
-                # reward based on the gap between intercept and smallest span
-                r = self.act - min(self.intercept, self.rad)
-                # print(r, 'sad')
-            elif reward_nr == 6:
-                # reward interception + penalty/bonus on binary queries
-                if self.rew_adv:
-                    r = max(2*(self.act - self.rad), -1)
-                else:
-                    r = max((self.act - self.rad), 0)
-                if self.imp:
-                    r -= 2
-                else:
-                    r += 2
-            elif reward_nr == 7:
-                # reward when intercepting queries that are actually adversarial
-                r = max((self.act - self.rad), 0) if self.is_det else 0
-            elif reward_nr == 8:
-                # reward when intercepting queries that are actually adversarial
-                r = 1 - max((self.act - self.rad), 0) if self.is_det else max(2*(self.act - self.rad), -1)
+        # if self.past == 0 or self.past == 1:
+        #     # averageStepsize = np.mean(np.asarray(stepsize))
+        #     # print(averageStepsize)
+        #     if reward_nr == 1:
+        #         # Reward keeping best_advs close to starting point
+        #         r = 1 - 2*(l2(self.starting_point.detach().numpy(), self.best_advs.raw.squeeze(0).numpy()) / self.gap)
+        #     elif reward_nr == 2:
+        #         # reward interception + penalty/bonus on binary queries
+        #         r = self.act - min(self.intercept, self.rad)
+        #         if self.imp:
+        #             r -= 2
+        #         else:
+        #             r += 2
+        #     elif reward_nr == 3:
+        #         # penalty/bonus on binary queries
+        #         r = -2 if self.imp else 2
+        #     elif reward_nr == 4:
+        #         # reward interception
+        #         # r = -1 if self.rew_adv else 1
+        #         if self.rew_adv:
+        #             r = max(2*(self.act - self.rad), -1)
+        #         else:
+        #             r = max((self.act - self.rad), 0)
+        #     elif reward_nr == 5:
+        #         # reward based on the gap between intercept and smallest span
+        #         r = self.act - min(self.intercept, self.rad)
+        #         # print(r, 'sad')
+        #     elif reward_nr == 6:
+        #         # reward interception + penalty/bonus on binary queries
+        #         if self.rew_adv:
+        #             r = max(2*(self.act - self.rad), -1)
+        #         else:
+        #             r = max((self.act - self.rad), 0)
+        #         if self.imp:
+        #             r -= 2
+        #         else:
+        #             r += 2
+        #     elif reward_nr == 7:
+        #         # reward when intercepting queries that are actually adversarial
+        #         r = max((self.act - self.rad), 0) if self.is_det else 0
+        #     elif reward_nr == 8:
+        #         # reward when intercepting queries that are actually adversarial
+        #         r = 1 - max((self.act - self.rad), 0) if self.is_det else max(2*(self.act - self.rad), -1)
                 
-        elif self.past == 2:
-            # print(self.check_bn)
-            # r = 0.5 if self.check_bn else -0.5
-            # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
-            r = 1 - self.act if self.check_bn else -1
-            # r = 0.5 if self.check_bn else -0.5
-            # print(r, 'jkh')
-            
+        # elif self.past == 2:
+        #     # print(self.check_bn)
+        #     # r = 0.5 if self.check_bn else -0.5
+        #     # r = min(self.intercept, self.rad) - self.act if self.check_bn else -1
+        #     r = 1 - self.act if self.check_bn else -1
+        #     # r = 0.5 if self.check_bn else -0.5
+        #     # print(r, 'jkh')
+   
         return np.reshape(r, (1,))
 
     def reward1(self):
@@ -767,6 +825,7 @@ class HsjaTransCIFAR(gym.Env):
             
         return np.reshape(reward, (1,))
 
+
     def get_pair(self):
         if self.test:
             startImgNr = self.pairs[self.resets][0]
@@ -807,67 +866,62 @@ class HsjaTransCIFAR(gym.Env):
 
 
     def apply_transforms(self, sample, action):
-        # Low distortion transformations as described in the stateful paper
-        # Uniform Noise / Translate / Rotate / Pixel-wise Scale
-        # Crop and Resize / Brightness / Contrast / Gaussian Noise
-        
-        # High distortion transformations:
-        # Brightness / Contrast / Pixel-wise Scale
-        
-        if self.adaptive == 0:
-            # action = [0.064, 0.45, 0.018, 0.17, 0.04, 0.09, 0.55, 0.095]
-            action = [0.204, 0.79, 0.36]
         trs = []
-        # print(action)
-        # brightness
-        a = (action[0] + 2) / 8 if self.adaptive else action[0]
-        trs.append(transforms.ColorJitter(brightness=a))
-        # contrast
-        a = (action[1] + 2) / 8 if self.adaptive else [action[1], 1]
-        trs.append(transforms.ColorJitter(contrast=a))
-        # # flip horizontal
-        # if action[1] > 0:
-        #     a = action[1]/2
-        #     trs.append(transforms.RandomHorizontalFlip(p=a))
-        # # flip vertical
-        # if action[2] > 0:
-        #     a = action[2]/2
-        #     trs.append(transforms.RandomVerticalFlip(p=a))
-        # # sharpness
-        # if action[3] > 0:
-        #     a = (action[3]/2) + 0.8
-        #     trs.append(transforms.RandomAdjustSharpness(a,p=1))
-        # # perspective
-        # if action[4] > 0:
-        #     a = action[4]/4
-        #     a = np.random.uniform(a/2, a)
-        #     trs.append(transforms.RandomPerspective(distortion_scale=a, p=1))
-        # # rotate
-        # if action[5] > 0:
-        #     a = np.random.uniform(0, action[5])*90
-        #     trs.append(transforms.RandomAffine(degrees=a))
+        # brightness & contrast
+        if action[0] > 0:
+            a = action[0]/4
+            trs.append(transforms.ColorJitter(brightness=a, contrast=a))
+        # flip horizontal
+        if action[1] > 0:
+            a = action[1]/2
+            trs.append(transforms.RandomHorizontalFlip(p=a))
+        # flip vertical
+        if action[2] > 0:
+            a = action[2]/2
+            trs.append(transforms.RandomVerticalFlip(p=a))
+        # sharpness
+        if action[3] > 0:
+            a = (action[3]/2) + 0.8
+            trs.append(transforms.RandomAdjustSharpness(a,p=1))
+        # perspective
+        if action[4] > 0:
+            a = action[4]/4
+            a = np.random.uniform(a/2, a)
+            trs.append(transforms.RandomPerspective(distortion_scale=a, p=1))
+        # rotate
+        if action[5] > 0:
+            a = np.random.uniform(0, action[5])*90
+            trs.append(transforms.RandomAffine(degrees=a))
 
         # compose
         apply = transforms.Compose(trs)
         sample = apply(sample)
                 
         # scale
-        if self.adaptive:
-            a = (action[2] + 2) / 8
-        else:
-            a = action[2]
-        sc = np.random.uniform(-a, a)
-        sample = sample*(1+sc)
-        sample = torch.clamp(sample, 0, 1)
+        if action[6] > 0:
+            a = action[6]/10
+            sc = np.random.uniform(-a, a)
+            sample = sample*(1+sc)
+            sample = torch.clamp(sample, 0, 1)
 
         return sample
     
     def swap(self, span, action):
         if action.shape == 1:
             action = action[0]
-        if self.defense == 0:
-            inn = min(span) > 0.005*self.intercept if self.vanilla else True
-        else: # if self.defense == 1 or 2
+        if self.adaptive == 0:
+            if self.vanilla:
+                inn = min(span) > 0.005*self.intercept
+            else:
+                inn = True
+        elif self.adaptive == 1:
+            if self.vanilla:
+                inn = min(span) > 0.005*self.intercept
+                # print(inn, min(span), self.iter)
+            else:
+                inn = True
+            # print(inn, self.adaptive, self.vanilla, min(span), action[0])
+        else:
             inn = min(span) > action
             # inn = True
 
@@ -902,6 +956,8 @@ class HsjaTransCIFAR(gym.Env):
         correct = np.mean(self.correct) if self.done else 'NA'
         info = {"iterations" : self.iter,
                 "benigns" : self.queries,
+                "detections" : self.det,
+                "resets": self.resets,
                 "epsilon" : self.dist,
                 "correct" : correct,
                 "curr" : self.curr,
