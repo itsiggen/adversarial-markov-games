@@ -94,7 +94,8 @@ def test(num, rew, scale):
     eval_steps = 5000
     defended = True
     nona = False
-    seed = 2
+    seed = 3
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsSkipCIFAR-v0",
@@ -108,12 +109,17 @@ def test(num, rew, scale):
                     test=True)
         
     model = PPO.load("mods/cifarbags_" + str(num) + "_model.pt", seed=seed)
+    np.random.seed(seed)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
     
-    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length]
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length, asr]
     c = np.mean([i[1000] for i in epsilons])
     d = np.mean([i[2000] for i in epsilons])
-    print('bags0:', res, c, d)
+    print(f'bags0 | defended {defended}, not-adaptive {nona}:', res, c, d)
         
     return mean_eps
 

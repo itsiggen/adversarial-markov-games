@@ -2,6 +2,7 @@ import argparse
 import gym
 import os
 import numpy as np
+import pandas as pd
 import optuna
 from tqdm import tqdm
 from agents.rppo import RPPO
@@ -42,7 +43,7 @@ def objective(trial):
     rint = trial.suggest_categorical('rint', [2,3,4,5])
     radv = 1
     ts = trial.suggest_categorical('ts', [5e5,1e6])
-    ts = 100
+    ts = 5e5
 
     # Create environment
     env = gym.make("BagsGamesCIFAR-v0",
@@ -99,7 +100,7 @@ def objective(trial):
     curr, nxt = 1, 0
     n_steps = 0
     
-    for timestep in tqdm(range(total_timesteps), disable=True):
+    for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move
@@ -187,6 +188,7 @@ def test(num, scale, rew):
     ratio = 0.5
     defended = False
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsGamesCIFAR-v0",
@@ -211,11 +213,25 @@ def test(num, scale, rew):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    res = [mean_eps, start_eps, mean_acc]
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
 
     c = np.mean([i[1000] for i in epsilons])
     d = np.mean([i[2000] for i in epsilons])
-    print('bags4:', res, c, d)
+    
+    print(f'cbags4 | defended {defended}:', res, c, d)
+    
+    # compute std if needed for confidence bounds
+    # print(len(epsilons), len(epsilons[0]))
+    # vec_mean = [np.mean([i[j] for i in epsilons]) for j in range(5000)]
+    # vec_std = [np.std([i[j] for i in epsilons]) for j in range(5000)]
+    
+    # data = {'Mean': vec_mean, 'Standard Deviation': vec_std}
+    # df = pd.DataFrame(data)
+    # df.to_csv('res/cbags4.csv', index=False)
         
     return mean_eps, mean_acc
 

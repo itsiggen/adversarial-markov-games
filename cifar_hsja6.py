@@ -39,7 +39,7 @@ def objective(trial):
     scale = 4
     rint = trial.suggest_categorical('rint', [2,4,6])
     radv = 8
-    ts = trial.suggest_categorical('ts', [6e5,12e5])
+    ts = trial.suggest_categorical('ts', [6e5,1e5])
 
     # Create environment
     env = gym.make("HsjaGamesCIFAR-v0",
@@ -70,7 +70,7 @@ def objective(trial):
                 seed=seed,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
-    adversary = RPPO.load("mods/games/chsja5adv_7.pt", env, "adversary", seed)
+    adversary = RPPO.load("mods/games/chsja5adv_1.pt", env, "adversary", seed)
     
     benign = RandomAgent(env=env)
       
@@ -170,6 +170,7 @@ def check_full(agents, stt):
         # if agents[0].rollout_buffer.full:
             # print(i, "agent training")
             agents[i].close_buffer()
+            
             if stt == i or stt == 2:
                 agents[i].train()
             agents[i].reset_buffer()
@@ -177,14 +178,14 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, rew):
+def test(num, scale, rew):
     eval_steps = 5000
     adaptive = 2 # int adaptive 
     ratio = 0.5
-    defended = False
-    scale = 2
+    defended = True
     seed = 2
     cont = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
@@ -210,14 +211,17 @@ def test(num, rew):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print('chsja6:', res, c, d)
+    print(f'chsja6 | defended {defended}:', res, c, d)
         
     return mean_eps, mean_acc
 
@@ -229,8 +233,9 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("18"), type=str, help="Model to load")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("7"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(4), type=int, help="Scale")
     parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
@@ -238,5 +243,5 @@ if __name__ == '__main__':
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=30, n_jobs=1, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.rew)
+        mean_eps, mean_acc = test(args.load, args.scale, args.rew)
     # train(args)

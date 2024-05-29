@@ -1,115 +1,112 @@
 import argparse
 import gym
 import os
+os.environ["CUDA_VISIBLE_DEVICES"]=''
 import numpy as np
 import optuna
-import gc
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.bags_trans_cifar import BagsTransCIFAR
+from envs.bags_blacklight_cifar import BagsBlacklightCIFAR
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform = transforms.ToTensor()
 dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
-
+    
 def objective(trial):
     """
-    BA-VD: Blind Adversary - Vanilla Defense
-    CA-VD: Control Adversary - Vanilla Defense
-    BA-TD: Blind Adversary - Trained Defense
-    CA-TD: Control Adversary - Trained Defense
-    BA-AD: Blind Adversary - Adaptive Defense
-    CA-TD: Control Adversary - Adaptive Defense
+    AA-BD: Adaptive Adversary - Blacklight Defense
     """
-    
-    print('Training CBAGS-11: AA-TD..')
+    print('Training AA-BD..')
     
     eval_steps = 5000
-    defense = 2 # 0 vanilla | 1 trained | 2 adaptive 
-    adaptive = 0 # 0 blind | 1 control
-    stt = 2 if adaptive == 1 else 0 # both are learning
+    adaptive = 3
     ratio = 0.5
+    stt = 1 # adversary is learning
     defended = False
-    cont = 2
     seed = 2
 
-    steps = trial.suggest_categorical('steps', [1000,2000,3000])
-    lra = trial.suggest_categorical('lra', [0.003,0.001,0.0001])
-    lri = trial.suggest_categorical('lri', [0.003,0.001,0.0001])
-    buffer = 2048
-    batch = 64
+    steps = trial.suggest_categorical('steps', [600,1000,2000,3000])
+    lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003])
+    buffer = trial.suggest_categorical('buffer', [1024,2048])
+    batch = trial.suggest_categorical('batch', [32,64,128])
     epochs = 20
-    gamma = 0.99
+    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
-    rint = trial.suggest_categorical('rint', [3,4,5])
-    radv = trial.suggest_categorical('radv', [2,3,4,5])
-    ts = trial.suggest_categorical('ts', [6e5,1e6])
+    scale = trial.suggest_categorical('scale', [5,10,20])
+    radv = trial.suggest_categorical('radv', [2,3,4])
+    rint = 1
+    ts = trial.suggest_categorical('ts', [1e6,2e6])
     
     # Create environment
-    env = gym.make("BagsTransCIFAR-v0",
+    env = gym.make("BagsBlacklightCIFAR-v0",
                    steps=steps,
                    ratio_benign=ratio,
-                   defense=defense,
                    adaptive=adaptive,
                    dataset=dataset,
-                   cont=cont,
                    rint=rint,
                    radv=radv,
-                   defended=defended,
-                   )
+                   scale=scale,
+                   defended=defended)
     
     total_timesteps = int(ts)
     
     interceptor = RPPO(policy="MlpPolicy",
                 env=env,
                 agent='interceptor',
-                n_steps=buffer,
+                n_steps=2048,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lri,
+                learning_rate=lr,
                 gamma=round(gamma,2),
+                tensorboard_log=None,
                 ent_coef=ent_coef,
                 verbose=0,
                 seed=seed,
-                # policy_kwargs=dict(net_arch=[32,32]))
+                mode=2,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
-
+     
     adversary = RPPO(policy="MlpPolicy",
                 env=env,
                 agent='adversary',
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lra,
+                learning_rate=lr,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef,
+                ent_coef = ent_coef,
                 verbose=0,
                 seed=seed,
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
-
+    
     benign = RandomAgent(env=env)
       
     agents = [interceptor, adversary, benign]
     
     for agent in agents:
         agent.setup_learn()
+
     obs = env.reset()
     agents[0].set_last(obs, False)
     done = False
     curr, nxt = 1, 0
     n_steps = 0
-        
-    for timestep in tqdm(range(total_timesteps), disable=False):
+    rst = 1
+
+    # moving avg
+    dets = 0
+    eps = 0
+
+    pbar = tqdm(range(total_timesteps), disable=False)
+    for timestep in pbar:
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move
         prev = curr
         # next agent moves
-        # print(nxt)
-        # obs, reward, done, info, curr, nxt = agents[nxt].move()
         obs, reward, done, info = agents[nxt].move()
         curr = info["curr"]
         nxt = info["next"]
@@ -123,39 +120,39 @@ def objective(trial):
                 agents[prev].proceed(obs, reward, done, info)
         elif curr == 1 or curr == 2:
             if done:
-                # term_obs = agents[1].env.get_obs()
+                dets += info['detections'] / info['iterations']
+                eps += info['epsilon']
+                pbar.set_description(
+                    f"Episode {info['resets']} | avg eps={(eps/info['resets']):.4f} | "
+                    f"Detection rate : {dets/info['resets']}")
                 agents[0].proceed(obs, reward, False, info)
-                # print(info['gap'], info['epsilon'], info['correct'])
-                # agents[0].set_last(obs, False)
                 done, curr, nxt, n_steps = reset()
             else:
                 agents[0].proceed(obs, reward, done, info)
-
-    # Save the trained agents
     
+    # Save the trained agents
     print("Saving models...")
-    interceptor.save("mods/games/cbags12int_" + str(trial.number) + ".pt")
-    adversary.save("mods/games/cbags12adv_" + str(trial.number) + ".pt")
+    interceptor.save("mods/blacklight/bagsint_" + str(trial.number) + ".pt")
+    adversary.save("mods/blacklight/bagsadv_" + str(trial.number) + ".pt")
 
     # Make evaluation env
+    # Different seed for validation pairs.
     seed = 3
-    envv = gym.make("BagsTransCIFAR-v0",
+    envv = gym.make("BagsBlacklightCIFAR-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
-                    defense=defense,
                     adaptive=adaptive,
                     dataset=dataset,
-                    cont=cont,
+                    scale=scale,
                     defended=defended,
                     train=False,
                     rint=rint,
                     radv=radv)
     
-    # Load the trained agents
-    interceptor = RPPO.load("mods/games/cbags12int_" + str(trial.number) + ".pt" , envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/cbags12adv_" + str(trial.number) + ".pt" , envv, "adversary", seed)
+    interceptor = RPPO.load("mods/blacklight/bagsint_" + str(trial.number) + ".pt", envv, "interceptor", seed)
+    adversary = RPPO.load("mods/blacklight/bagsadv_" + str(trial.number) + ".pt", envv, "adversary", seed)
                 
-    benign = RandomAgent(env=envv)
+    benign = RandomAgent(env=envv)    
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=15)
     
@@ -167,15 +164,12 @@ def objective(trial):
     del interceptor
     del adversary
     del benign
-    gc.collect()
     
     return mean_eps, mean_acc
     
 def check_full(agents, stt):
     for i in range(2):
         if agents[i].rollout_buffer.full:
-        # if agents[0].rollout_buffer.full:
-            # print(i, "agent training")
             agents[i].close_buffer()
             if stt == i or stt == 2:
                 agents[i].train()
@@ -184,66 +178,60 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, r1, r2):
+def save_results(study, trial):
+    with open("cbags_black_results.txt", "a") as f:
+        f.write(f"Trial {trial.number} has finished with values: {trial.values} and parameters: {trial.params}\n")
+
+def test(num, rew, scale):
     eval_steps = 5000
-    defense = 2 # 0 vanilla | 1 trained | 2 adaptive 
-    adaptive = 0 # 0 blind | 1 control
+    adaptive = 3
     ratio = 0.5
     defended = True
-    cont = 2
     seed = 2
+    thres = 3
 
     # Make evaluation env
-    envv = gym.make("BagsTransCIFAR-v0",
+    env = gym.make("BagsBlacklightCIFAR-v0",
                     steps=eval_steps,
                     ratio_benign=ratio,
-                    defense=defense,
                     adaptive=adaptive,
                     dataset=dataset,
+                    scale=scale,
                     defended=defended,
-                    cont=cont,
                     train=False,
-                    rint=r1,
-                    radv=r2)
+                    test=True,
+                    rint=rew,
+                    radv=1,)
+
+    interceptor = RPPO.load("mods/blacklight/bagsint_" + str(num) + ".pt" , env, "interceptor", seed)
+    adversary = RPPO.load("mods/blacklight/bagsadv_" + str(num) + ".pt" , env, "adversary", seed)
+
+    benign = RandomAgent(env=env)
+
+    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, env, n_eval_episodes=100)
     
-
-    interceptor = RPPO.load("mods/games/cbags12int_" + str(num) + ".pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/cbags12adv_" + str(num) + ".pt" , envv, "adversary", seed)
-
-    benign = RandomAgent(env=envv)
-    
-
-    mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
-
-    res = [mean_eps, start_eps, mean_acc]
-
-    z = list(zip(iters,epsilons))
-    a = [np.interp(1000, i[0], i[1]) for i in z]
-    b = [np.interp(2000, i[0], i[1]) for i in z]
-    c = np.mean(a)
-    d = np.mean(b)
-    print(res, c, d)
+    # attack succes rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
+    c = np.mean([i[1000] for i in epsilons])
+    d = np.mean([i[2000] for i in epsilons])
+    print(f'cbagsblack | defended {defended}', res, c, d)
         
     return mean_eps, mean_acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
-    parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("8"), type=str, help="Agent to load")
-    parser.add_argument('--r1', default=int(5), type=bool, help="Int reward used")
-    parser.add_argument('--r2', default=int(3), type=bool, help="Adv reward used")
-
+    parser.add_argument('--load', default=str("2"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=int(20), type=int, help="Scaling used")
+    parser.add_argument('--rew', default=int(3), type=int, help="Reward used")
     args = parser.parse_args()
     if args.train:
         # Create a new optuna study.
         study = optuna.create_study(directions=['maximize', 'maximize'])
-        study.optimize(objective, n_trials=30, gc_after_trial=True)
+        study.optimize(objective, n_trials=30, gc_after_trial=True, callbacks=[save_results])
     else:
-        mean_eps = test(args.load, args.r1, args.r2)
-    # train(args)
+        mean_eps, mean_acc = test(args.load, args.rew, args.scale)

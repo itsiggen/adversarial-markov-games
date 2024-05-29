@@ -1,7 +1,6 @@
 import argparse
 import gym
 import os
-import pandas as pd
 import numpy as np
 import optuna
 from tqdm import tqdm
@@ -9,7 +8,7 @@ from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.hsja_skip import HsjaSkip
+from envs.bags_games import BagsGames
 from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
@@ -53,7 +52,7 @@ def objective(trial):
     
     total_timesteps = int(ts)
 
-    interceptor = RPPO.load("mods/games/bags6int_0.pt", env, "interceptor", seed)
+    interceptor = RPPO.load("mods/games/cbags4int_0.pt", env, "interceptor", seed)
     # interceptor.mode = 0
 
     # print(env.action_space)
@@ -168,6 +167,7 @@ def test(num, rew, scale):
     defended = True
     ratio = 0.5
     seed = 2
+    thres = 3
     
     # Make evaluation env
     envv = gym.make("BagsGames-v0",
@@ -191,19 +191,19 @@ def test(num, rew, scale):
     
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     c = np.mean([i[1000] for i in epsilons])
     d = np.mean([i[2000] for i in epsilons])
-    print('bags3:', res, c, d)
+    print(f'bags3 | defended {defended}:', res, c, d)
         
     return mean_eps, mean_acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")

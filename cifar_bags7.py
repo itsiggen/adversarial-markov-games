@@ -39,10 +39,10 @@ def objective(trial):
     gamma = 0.99
     ent_coef = 0
     vf_coef = 0.5
-    scale = 20
+    scale = trial.suggest_categorical('scale', [5,10,20])
     rint = trial.suggest_categorical('rint', [3,4,5])
     radv = trial.suggest_categorical('radv', [2,3,4,5])
-    ts = trial.suggest_categorical('ts', [6e5,1e6])
+    ts = trial.suggest_categorical('ts', [1e6,15e5])
     
     # Create environment
     env = gym.make("BagsGamesCIFAR-v0",
@@ -183,14 +183,14 @@ def check_full(agents, stt):
 def reset():
     return False, 1, 0, 0
 
-def test(num, r1, r2):
+def test(num, r1, r2, scale):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    scale = 20
-    defended = False
+    defended = True
     cont = 2
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsGamesCIFAR-v0",
@@ -202,6 +202,7 @@ def test(num, r1, r2):
                     cont=cont,
                     scale=scale,
                     train=False,
+                    test=True,
                     rint=r1,
                     radv=r2)
     
@@ -214,14 +215,16 @@ def test(num, r1, r2):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
 
-    z = list(zip(iters,epsilons))
-    a = [np.interp(1000, i[0], i[1]) for i in z]
-    b = [np.interp(2000, i[0], i[1]) for i in z]
-    c = np.mean(a)
-    d = np.mean(b)
-    print(res, c, d)
+    c = np.mean([i[1000] for i in epsilons])
+    d = np.mean([i[2000] for i in epsilons])
+    
+    print(f'cbags7-8 | defended {defended}:', res, c, d)
         
     return mean_eps
 
@@ -234,9 +237,12 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("17"), type=str, help="Agent to load")
-    parser.add_argument('--r1', default=int(3), type=bool, help="Int reward used")
+    # parser.add_argument('--load', default=str("10"), type=str, help="Agent to load")
+    parser.add_argument('--load', default=str("1"), type=str, help="Agent to load")
+    parser.add_argument('--r1', default=int(4), type=bool, help="Int reward used")
     parser.add_argument('--r2', default=int(3), type=bool, help="Adv reward used")
+    parser.add_argument('--scale', default=int(5), type=bool, help="Adv reward used")
+
 
     args = parser.parse_args()
     if args.train:
@@ -244,5 +250,5 @@ if __name__ == '__main__':
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
-        mean_eps = test(args.load, args.r1, args.r2)
+        mean_eps = test(args.load, args.r1, args.r2, args.scale)
     # train(args)

@@ -17,6 +17,7 @@ ratio = 0.5
 defended = True
 cont = 0
 seed = 2
+thres = 3
 
 # Make evaluation env
 env = gym.make("HsjaGamesCIFAR-v0",
@@ -39,12 +40,15 @@ benign = RandomAgent(env=env)
 
 mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rtpolicy(interceptor, adversary, benign, env, n_eval_episodes=100)
 
-
-res = [mean_eps, start_eps, mean_acc]
+# attack success rate
+lsc = [i[-1] for i in epsilons]
+suc = np.sum(np.array(lsc) < thres)
+asr = suc / len(lsc)
+res = [mean_eps, start_eps, mean_acc, asr]
 
 z = list(zip(iters,epsilons))
 a = [np.interp(1000, i[0], i[1]) for i in z]
 b = [np.interp(2000, i[0], i[1]) for i in z]
 c = np.mean(a)
 d = np.mean(b)
-print('chsja2:', res, c, d)
+print(f'chsja2 | defended {defended}:', res, c, d)

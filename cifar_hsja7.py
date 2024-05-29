@@ -8,7 +8,7 @@ from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
-from envs.bags_games_cifar import BagsGamesCIFAR
+from envs.hsja_games_cifar import HsjaGamesCIFAR
 
 transform = transforms.ToTensor()
 dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
@@ -195,10 +195,11 @@ def test(num, r1, r2):
     eval_steps = 5000
     adaptive = 3 # both adaptive 
     ratio = 0.5
-    defended = False
+    defended = True
     scale = 4
     cont = 1
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
@@ -222,14 +223,17 @@ def test(num, r1, r2):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print('chsja7:', res, c, d)
+    print(f'chsja7 | defended {defended}:', res, c, d)
         
     return mean_eps, mean_acc
 
@@ -241,10 +245,11 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("18"), type=str, help="Model to load")
-    parser.add_argument('--r1', default=int(2), type=bool, help="R1 used")
-    parser.add_argument('--r2', default=int(8), type=bool, help="R2 used")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
+    # parser.add_argument('--load', default=str("7"), type=str, help="Model to load")
+    parser.add_argument('--load', default=str("13"), type=str, help="Model to load")
+    parser.add_argument('--r1', default=int(4), type=bool, help="R1 used")
+    parser.add_argument('--r2', default=int(7), type=bool, help="R2 used")
 
     args = parser.parse_args()
     if args.train:
@@ -252,5 +257,5 @@ if __name__ == '__main__':
         study = optuna.create_study(directions=['maximize', 'maximize'])
         study.optimize(objective, n_trials=30, n_jobs=1, gc_after_trial=True)
     else:
-        mean_eps, mean_acc = test(args.load, args.rew)
+        mean_eps, mean_acc = test(args.load, args.r1, args.r2)
     # train(args)

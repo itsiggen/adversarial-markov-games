@@ -9,8 +9,9 @@ from stable_baselines3 import PPO
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_policy
 
+
 transform = transforms.ToTensor()
-dataset = datasets.CIFAR10('data', train=False, transform=transform, download=True)
+dataset = datasets.CIFAR10('./data', train=False, transform=transform, download=True)
 
 def objective(trial):
     """
@@ -22,10 +23,8 @@ def objective(trial):
     eval_steps = 5000
     steps = trial.suggest_categorical('steps', [1000,3000,5000])
     arch = trial.suggest_categorical('architecture', [32,64,128])
-    # buffer = trial.suggest_categorical('buffer', [256,1024,2048])
-    buffer = 64
-    # batch = trial.suggest_categorical('batch', [32,64,128])
-    batch = 32
+    buffer = trial.suggest_categorical('buffer', [256,1024,2048])
+    batch = trial.suggest_categorical('batch', [32,64,128])
     lr = trial.suggest_categorical('lr', [0.001,0.0005,0.0001,0.00005])
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = trial.suggest_categorical('ent_coef', [0,0.001,0.0001])
@@ -90,6 +89,7 @@ def test(num, rew):
     defended = True
     nona = False
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make('HsjaSkipCIFAR-v0',
@@ -104,14 +104,17 @@ def test(num, rew):
     model = PPO.load("mods/cifarhsja_" + str(num) + "_model.pt", seed=seed)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
     
-    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'chsja0 | defended {defended}, not-adaptive {nona}:', res, c, d)
         
     return mean_eps
 

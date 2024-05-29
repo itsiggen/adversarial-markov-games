@@ -23,6 +23,8 @@ ratio = 0.5
 defended = True
 cont = 0
 seed = 2
+thres = 3
+
 
 # Make evaluation env
 env = gym.make("BagsGamesCIFAR-v0",
@@ -32,18 +34,23 @@ env = gym.make("BagsGamesCIFAR-v0",
                dataset=dataset,
                defended=defended,
                train=False,
+               test=True,
                rint=1,
                radv=1,
                intercept=1)
     
-interceptor = RPPO.load("mods/games/bags4int_8.pt" , env, "interceptor", seed)
-adversary = RPPO.load("mods/games/bags4adv.pt", env, "adversary", seed)
+interceptor = RPPO.load("mods/games/cbags4int_8.pt" , env, "interceptor", seed)
+adversary = RPPO.load("mods/games/cbags4adv.pt", env, "adversary", seed)
 benign = RandomAgent(env=env)
 
 mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rtpolicy(interceptor, adversary, benign, env, act_size=4, n_eval_episodes=100)
 
 
-res = [mean_eps, start_eps, mean_acc]
+# attack success rate
+lsc = [i[-1] for i in epsilons]
+suc = np.sum(np.array(lsc) < thres)
+asr = suc / len(lsc)
+res = [mean_eps, start_eps, mean_acc, asr]
 c = np.mean([i[1000] for i in epsilons])
 d = np.mean([i[2000] for i in epsilons])
-print('bags2:', res, c, d)
+print(f'cbags2 | defended {defended}:', res, c, d)

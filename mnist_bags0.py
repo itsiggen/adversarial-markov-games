@@ -3,7 +3,6 @@ import gym
 import os
 import numpy as np
 import optuna
-from tqdm import tqdm
 from stable_baselines3 import PPO
 from envs.bags_skip import BagsSkip
 from torchvision import datasets, transforms
@@ -35,12 +34,6 @@ def objective(trial):
     defended = False
     nona = False
     seed = 2
-    
-    """
-    Best: 2.468632221221924 with parameters:
-    {'architecture': 32, 'buffer': 2048, 'batch': 128, 'steps': 1000, 'total': 5000000.0,
-    'lr': 0.0001, 'epochs': 20, 'gamma': 0.82, 'ent_coef': 5e-05, 'scale': 25, 'reward': 3}
-    """
     
     # Create environment
     env = gym.make("BagsSkip-v0",
@@ -88,9 +81,10 @@ def objective(trial):
 
 def test(num, rew):
     eval_steps = 5000
-    defended = False
-    nona = True
+    defended = True
+    nona = False
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsSkip-v0",
@@ -100,34 +94,24 @@ def test(num, rew):
                     rewarder=rew,
                     nonadaptive=nona,
                     train=False)
-        
+                            
     model = PPO.load("mods/bagsskip_" + str(num) + "_model.pt", seed=seed)
     mean_reward, std_reward, epsilons, mean_eps, start_eps, iters, mean_length, _ = evaluate_policy(model, envv, n_eval_episodes=100)
     
-    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length]
-    # z = list(zip(iters,epsilons))
-    # a = [np.interp(1000, i[0], i[1]) for i in z]
-    # b = [np.interp(2000, i[0], i[1]) for i in z]
-    # print(epsilons[0][4999])
-    # print(len(epsilons[0]))
-    # print(len(epsilons[1]))
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_reward, std_reward, mean_eps, start_eps, mean_length, asr]
     c = np.mean([i[1000] for i in epsilons])
     d = np.mean([i[2000] for i in epsilons])
-    # c = np.mean(a)
-    # d = np.mean(b)
-    print(res, c, d)
+    print(f'bags0 | defended {defended}, not-adaptive {nona}', res, c, d)
         
     return mean_eps
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
-    parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("49"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(3), type=bool, help="Reward used")
@@ -138,4 +122,3 @@ if __name__ == '__main__':
         study.optimize(objective, n_trials=50, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
-    # train(args)

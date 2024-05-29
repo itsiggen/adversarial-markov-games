@@ -188,11 +188,12 @@ def test(num, rew, scale):
     eval_steps = 5000
     adaptive = 1
     vanilla = True
-    defended = False
+    defended = True
     ratio = 0.5
     cont = 0
     seed = 2
     inter = 1
+    thres = 3
     
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
@@ -220,25 +221,25 @@ def test(num, rew, scale):
     
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'chsja3 | defended {defended}:', res, c, d)
         
     return mean_eps
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
     parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("27"), type=str, help="Model to load")
     parser.add_argument('--scale', default=int(2), type=int, help="Scale")

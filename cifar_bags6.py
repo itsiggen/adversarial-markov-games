@@ -24,7 +24,7 @@ def objective(trial):
     print('Training BAGS-6: TA-AD..')
     
     eval_steps = 5000
-    adaptive = 3 # both adaptive 
+    adaptive = 3 # both adaptive
     stt = 0 # interceptor is learning
     ratio = 0.5
     defended = False
@@ -43,7 +43,7 @@ def objective(trial):
     vf_coef = 0.5
     rint = trial.suggest_categorical('rint', [3,4,5])
     radv = 5
-    scale = 20
+    scale = 10
     ts = trial.suggest_categorical('ts', [6e5,1e6,2e6])
     
     # Create environment
@@ -77,7 +77,7 @@ def objective(trial):
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
 
-    adversary = RPPO.load("mods/games/cbags5adv_29.pt", env, "adversary", seed)
+    adversary = RPPO.load("mods/games/cbags5adv_35.pt", env, "adversary", seed)
 
     benign = RandomAgent(env=env)
       
@@ -177,10 +177,11 @@ def test(num, rew):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    scale = 20
+    scale = 10
     cont = 2
-    defended = False
+    defended = True
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsGamesCIFAR-v0",
@@ -192,26 +193,30 @@ def test(num, rew):
                     scale=scale,
                     cont=cont,
                     train=False,
+                    test=True,
                     rint=rew,
                     radv=1)
     
 
     interceptor = RPPO.load("mods/games/cbags6int_" + str(num) + ".pt", envv, "interceptor", seed)
-    adversary = RPPO.load("mods/games/cbags6adv.pt" , envv, "adversary", seed)
+    # adversary = RPPO.load("mods/games/cbags6adv.pt" , envv, "adversary", seed)
+    adversary = RPPO.load("mods/games/cbags5adv_35.pt", envv, "adversary", seed)
 
     benign = RandomAgent(env=envv)
     
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
+    
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
 
-    res = [mean_eps, start_eps, mean_acc]
-
-    z = list(zip(iters,epsilons))
-    a = [np.interp(1000, i[0], i[1]) for i in z]
-    b = [np.interp(2000, i[0], i[1]) for i in z]
-    c = np.mean(a)
-    d = np.mean(b)
-    print(res, c, d)
+    c = np.mean([i[1000] for i in epsilons])
+    d = np.mean([i[2000] for i in epsilons])
+    
+    print(f'cbags6 | defended {defended}:', res, c, d)
         
     return mean_eps
 

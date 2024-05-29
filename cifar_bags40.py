@@ -37,7 +37,6 @@ def objective(trial):
     gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    # inter = trial.suggest_categorical('inter', [1,2])
     inter = 1
     scale = 20
     rint = trial.suggest_categorical('rint', [2,3,4,5])
@@ -106,8 +105,6 @@ def objective(trial):
         # Store previous move
         prev = curr
         # next agent moves
-        # print(nxt)
-        # obs, reward, done, info, curr, nxt = agents[nxt].move()
         obs, reward, done, info = agents[nxt].move()
         curr = info["curr"]
         nxt = info["next"]

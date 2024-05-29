@@ -4,14 +4,13 @@ import os
 import numpy as np
 import optuna
 import gc
-import tracemalloc
 from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 from envs.bags_games import BagsGames
-# os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ["CUDA_VISIBLE_DEVICES"] = ''
 
 transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
@@ -76,7 +75,7 @@ def objective(trial):
                 # policy_kwargs=dict(net_arch=[32,32]))
                 policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
 
-    adversary = RPPO.load("mods/games/bags5adv_5.pt", env, "adversary", seed)
+    adversary = RPPO.load("mods/games/bags5adv_2.pt", env, "adversary", seed)
 
     benign = RandomAgent(env=env)
       
@@ -178,6 +177,7 @@ def test(num, scale, rew):
     ratio = 0.5
     defended = True
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("BagsGames-v0",
@@ -188,6 +188,7 @@ def test(num, scale, rew):
                     defended=defended,
                     scale=scale,
                     train=False,
+                    embstate=True,
                     rint=rew,
                     radv=1)
     
@@ -200,29 +201,23 @@ def test(num, scale, rew):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
-
-    z = list(zip(iters,epsilons))
-    a = [np.interp(1000, i[0], i[1]) for i in z]
-    b = [np.interp(2000, i[0], i[1]) for i in z]
-    c = np.mean(a)
-    d = np.mean(b)
-    print(res, c, d)
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
+    c = np.mean([i[1000] for i in epsilons])
+    d = np.mean([i[2000] for i in epsilons])
+    print(f'bags6 | defended {defended}:', res, c, d)
         
     return mean_eps
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
-    parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("0"), type=str, help="Agent to load")
-    parser.add_argument('--scale', default=float(8), type=float, help="Intercept")
+    parser.add_argument('--scale', default=float(10), type=float, help="Intercept")
     parser.add_argument('--rew', default=int(4), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:
@@ -231,4 +226,3 @@ if __name__ == '__main__':
         study.optimize(objective, n_trials=20, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.scale, args.rew)
-    # train(args)

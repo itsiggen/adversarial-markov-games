@@ -23,7 +23,7 @@ def objective(trial):
     print('Training CHSJA-5: AA-TD..')
     
     eval_steps = 5000
-    adaptive = 3 # int adaptive 
+    adaptive = 3 # adv adaptive 
     ratio = 0.5
     stt = 1 # adversary is learning
     defended = False
@@ -32,16 +32,15 @@ def objective(trial):
     
     steps = trial.suggest_categorical('steps', [1000,3000,5000])
     lr = trial.suggest_categorical('lr', [0.003,0.001,0.0003,0.0001])
-    buffer = 2048
-    # batch = trial.suggest_categorical('batch', [32,64,128])
-    batch = 64
+    buffer = trial.suggest_categorical('buffer', [256,512])
+    batch = 32
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.95, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.9, 0.99, step=0.01)
     ent_coef = 0
     scale = trial.suggest_categorical('scale', [1,2,4])
     radv = trial.suggest_categorical('reward', [7,8,10,12])
     # radv = 9
-    ts = trial.suggest_categorical('ts', [6e5,1e6,2e6])
+    ts = trial.suggest_categorical('ts', [6e5,1e6])
     # ts = 1800
     rint = 1
     inter = 1
@@ -92,7 +91,7 @@ def objective(trial):
     n_steps = 0
     rst = 1
         
-    for timestep in tqdm(range(total_timesteps), disable=True):
+    for timestep in tqdm(range(total_timesteps), disable=False):
         # Check if a rollout buffer has been filled and train
         check_full(agents, stt)
         # Store previous move
@@ -192,6 +191,7 @@ def test(num, scale, rew):
     defended = False
     cont = 1
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
@@ -218,14 +218,17 @@ def test(num, scale, rew):
     # res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(mean_eps,3), round(start_eps,3), round(mean_acc,3)])
     # print(res)
 
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'chsja5 | defended {defended}:', res, c, d)
         
     return mean_eps, mean_acc
 
@@ -237,9 +240,9 @@ if __name__ == '__main__':
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("1"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=int(2), type=int, help="Scale")
+    parser.add_argument('--scale', default=int(4), type=int, help="Scale")
     parser.add_argument('--rew', default=int(8), type=int, help="Reward used")
     args = parser.parse_args()
     if args.train:

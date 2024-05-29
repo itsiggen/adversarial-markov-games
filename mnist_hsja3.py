@@ -1,7 +1,6 @@
 import argparse
 import gym
 import os
-import pandas as pd
 import numpy as np
 import optuna
 from tqdm import tqdm
@@ -10,7 +9,6 @@ from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 from envs.hsja_skip import HsjaSkip
-from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
@@ -53,23 +51,20 @@ def objective(trial):
     total_timesteps = int(ts)
 
     interceptor = RPPO.load("mods/games/hsja4int_8.pt" , env, "interceptor", seed)
-    # interceptor.mode = 0
 
-    # print(env.action_space)
     adversary = RPPO(policy="MlpPolicy",
                 env=env,
                 agent='adversary',
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lr, # 0.00039
+                learning_rate=lr,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef, # 0.0001
+                ent_coef=ent_coef,
                 verbose=0,
                 seed=seed,
                 policy_kwargs=dict(net_arch=[32,32]))
-                # policy_kwargs=dict(net_arch=[dict(vf=[32,32], pi=[32,32])]))
     
     benign = RandomAgent(env=env)
       
@@ -90,13 +85,10 @@ def objective(trial):
         # Store previous move
         prev = curr
         # next agent moves
-        # print(nxt)
         obs, reward, done, info = agents[nxt].move()
         curr = info["curr"]
         nxt = info["next"]
-        # print(curr,nxt)
         n_steps += 1
-        # print("cadence", prev, curr, nxt, reward)
 
         if curr == 0:
             if nxt == 0:
@@ -104,28 +96,18 @@ def objective(trial):
             elif nxt == 1:
                 if rst == 1:
                     # First time adv plays after start of episode, set first obs
-                    # to what 
                     agents[1].set_last(obs, False)
                     rst = 0
                 else:
                     agents[1].proceed(obs, reward, done, info)
-                    # print(agents[1].rollout_buffer.pos)
-            # elif nxt == 2:
-                # if ben is next, do not proceed
-                # agents[1].proceed(obs, reward, done, info)
         elif curr == 1 or curr == 2:
             if done:
-                # term_obs = agents[1].env.get_obs()
                 agents[0].proceed(obs, reward, False, info)
                 done, curr, nxt, n_steps = reset()
                 rst = 1
             else:
                 agents[0].proceed(obs, reward, done, info)
 
-    # Save the trained agents
-    
-    # env.contrasts.save()
-    
     print("Saving models...")
 
     adversary.save("mods/hsjaa3adv_" + str(trial.number) + ".pt")
@@ -159,9 +141,7 @@ def objective(trial):
 
 def check_full(agents):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
-            # print(i, "agent training")
             agents[i].close_buffer()
             agents[i].train()
             agents[i].reset_buffer()
@@ -178,6 +158,7 @@ def test(num, rew):
     cont = 0
     seed = 2
     inter = 1
+    thres = 3
     
     # Make evaluation env
     envv = gym.make("HsjaGames-v0",
@@ -198,29 +179,25 @@ def test(num, rew):
 
     benign = RandomAgent(env=envv)
     
-    
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'hsja3 | defended {defended}:', res, c, d)
         
     return mean_eps
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
-    parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("5"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(2), type=bool, help="Reward used")
@@ -231,4 +208,3 @@ if __name__ == '__main__':
         study.optimize(objective, n_trials=20, gc_after_trial=True)
     else:
         mean_eps = test(args.load, args.rew)
-    # train(args)

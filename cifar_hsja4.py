@@ -197,10 +197,11 @@ def test(num, rew):
     eval_steps = 5000
     adaptive = 2 # int adaptive 
     ratio = 0.5
-    defended = False
+    defended = True
     cont = 1
     seed = 2
-
+    thres = 3
+    
     # Make evaluation env
     envv = gym.make("HsjaGamesCIFAR-v0",
                     steps=eval_steps,
@@ -222,29 +223,25 @@ def test(num, rew):
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
     
-    # res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(mean_eps,3), round(start_eps,3), round(mean_acc,3)])
-    # print(res)
-
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'chsja4 | defended {defended}:', res, c, d)
         
     return mean_eps, mean_acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
     parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
     parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
-    parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
     parser.add_argument('--load', default=str("24"), type=str, help="Model to load")
     parser.add_argument('--rew', default=int(6), type=bool, help="Reward used")

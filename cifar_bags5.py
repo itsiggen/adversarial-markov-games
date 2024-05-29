@@ -32,13 +32,13 @@ def objective(trial):
     buffer = 2048
     batch = trial.suggest_categorical('batch', [32,64,128])
     epochs = 20
-    gamma = trial.suggest_float('gamma', 0.85, 0.99, step=0.01)
+    gamma = trial.suggest_float('gamma', 0.8, 0.99, step=0.01)
     ent_coef = 0
     vf_coef = 0.5
-    scale = trial.suggest_categorical('scale', [10,15,20])
+    scale = trial.suggest_categorical('scale', [5,10,20])
     # scale = 10
     inter = 1
-    radv = trial.suggest_categorical('radv', [1,2,3,4,5])
+    radv = trial.suggest_categorical('radv', [2,3,4,5])
     # radv = 3
     rint = 3
     ts = trial.suggest_categorical('ts', [5e5,1e6,2e6])
@@ -172,8 +172,9 @@ def test(num, rew, scale):
     eval_steps = 5000
     adaptive = 3 # int adaptive 
     ratio = 0.5
-    defended = False
+    defended = True
     seed = 2
+    thres = 3
 
     # Make evaluation env
   
@@ -183,6 +184,7 @@ def test(num, rew, scale):
                    adaptive=adaptive,
                    dataset=dataset,
                    train=False,
+                   test=True,
                    scale=scale,
                    rint=rew,
                    radv=1,
@@ -196,13 +198,19 @@ def test(num, rew, scale):
 
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
-    
-    res = [mean_eps, start_eps, mean_acc]
+       
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
 
     c = np.mean([i[1000] for i in epsilons])
     d = np.mean([i[2000] for i in epsilons])
-    print('bags3:', res, c, d)
-        
+    
+    print(f'cbags5 | defended {defended}:', res, c, d)
+    
+    
     return mean_eps, mean_acc
 
 if __name__ == '__main__':
@@ -214,9 +222,9 @@ if __name__ == '__main__':
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
     parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--name', default=str("false"), type=str, help="Name for experiment")
-    parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--load', default=str("29"), type=str, help="Model to load")
-    parser.add_argument('--scale', default=float(20), type=float, help="Scale")
+    parser.add_argument('--train', default=bool(True), type=bool, help="Train or Test")
+    parser.add_argument('--load', default=str("35"), type=str, help="Model to load")
+    parser.add_argument('--scale', default=float(10), type=float, help="Scale")
     parser.add_argument('--rew', default=int(5), type=bool, help="Reward used")
     args = parser.parse_args()
     if args.train:

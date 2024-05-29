@@ -1,24 +1,19 @@
 import argparse
 import gym
 import os
-import pandas as pd
 import numpy as np
 import optuna
 import gc
-import tracemalloc
 from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
 from utils.evaluation import evaluate_rdpolicy
 from envs.hsja_games import HsjaGames
-from stable_baselines3.common.vec_env import VecNormalize
-# os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
 dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
-
-from pyinstrument import Profiler
 
 def objective(trial):
     """
@@ -35,7 +30,6 @@ def objective(trial):
     seed = 2
 
     steps = trial.suggest_categorical('steps', [1000,2500,5000])
-    # steps = 1000
     lra = trial.suggest_categorical('lra', [0.003,0.001,0.0001])
     lri = trial.suggest_categorical('lri', [0.003,0.001,0.0001])
     buffer = 1024
@@ -44,22 +38,17 @@ def objective(trial):
     gamma = 0.99
     ent_coef = 0
     vf_coef = 0.5
-    que = True
     rint = trial.suggest_categorical('rint', [2,4,5])
     radv = trial.suggest_categorical('radv', [1,3,5])
     inter = 1
-    # ts = trial.suggest_categorical('ts', [1e6,2e6])
-    ts = 1e6
-    
-    # {'steps': 1000, 'lr': 0.0001, 'rint': 5, 'radv': 1, 'ts': 1000000.0}
-    
+        
     # Create environment
     env = gym.make("HsjaGames-v0",
                    steps=steps,
                    ratio_benign=ratio,
                    adaptive=adaptive,
                    dataset=dataset,
-                   train=que,
+                   train=True,
                    rint=rint,
                    radv=radv,
                    defended=defended,
@@ -74,10 +63,10 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lri, # 0.00039
-                gamma=round(gamma,2), # 0.92
+                learning_rate=lri,
+                gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef, # 0.0001
+                ent_coef=ent_coef,
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
@@ -89,10 +78,10 @@ def objective(trial):
                 n_steps=buffer,
                 batch_size=batch,
                 n_epochs=epochs,
-                learning_rate=lra, # 0.00039
+                learning_rate=lra,
                 gamma=round(gamma,2),
                 tensorboard_log=None,
-                ent_coef=ent_coef, # 0.0001
+                ent_coef=ent_coef,
                 vf_coef=vf_coef,
                 verbose=0,
                 seed=seed,
@@ -117,13 +106,10 @@ def objective(trial):
         # Store previous move
         prev = curr
         # next agent moves
-        # print(nxt)
         obs, reward, done, info = agents[nxt].move()
         curr = info["curr"]
         nxt = info["next"]
-        # print(curr,nxt)
         n_steps += 1
-        # print("cadence", prev, curr, nxt, reward)
 
         if curr == 0:
             if nxt == 0:
@@ -131,26 +117,12 @@ def objective(trial):
             elif nxt == 1:
                 if rst == 1:
                     # First time adv plays after start of episode, set first obs
-                    # to what 
                     agents[1].set_last(obs, False)
                     rst = 0
                 else:
                     agents[1].proceed(obs, reward, done, info)
-                    # print(agents[1].rollout_buffer.pos)
-            # elif nxt == 2:
-                # if ben is next, do not proceed
-                # agents[1].proceed(obs, reward, done, info)
         elif curr == 1 or curr == 2:
             if done:
-                
-                # snapshot2 = tracemalloc.take_snapshot()
-                # top_stats = snapshot2.compare_to(snapshot1, 'lineno')
-                # print("[ Top 10 differences ]")
-                # for stat in top_stats[:10]:
-                #     print(stat)
-                # # snapshot1 = tracemalloc.take_snapshot()
-                                
-                # term_obs = agents[1].env.get_obs()
                 agents[0].proceed(obs, reward, False, info)
                 done, curr, nxt, n_steps = reset()
                 rst = 1
@@ -158,8 +130,6 @@ def objective(trial):
                 agents[0].proceed(obs, reward, done, info)
 
     # Save the trained agents
-    
-    # env.contrasts.save()
     
     print("Saving models...")
     interceptor.save("mods/games/hsjaa7int_" + str(trial.number) + ".pt")
@@ -186,7 +156,6 @@ def objective(trial):
     benign = RandomAgent(env=envv)
 
     mean_rint, std_rint, mean_radv, std_radv, epsilons, lengths, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=15)
-    # envv.gstates.save("mods/data/hsja4eval_" + str(trial.number) + ".csv")
     
     res = np.asarray([round(mean_rint,2), round(std_rint,2), round(mean_radv,2), round(std_radv,2), round(start_eps,3), round(mean_eps,3), round(mean_acc,3)])
     print('hsja7:', res)
@@ -202,9 +171,7 @@ def objective(trial):
     
 def check_full(agents):
     for i in range(2):
-        # print(agents[i].rollout_buffer.pos)
         if agents[i].rollout_buffer.full:
-            # print(i, "agent training")
             agents[i].close_buffer()
             agents[i].train()
             agents[i].reset_buffer()
@@ -216,9 +183,10 @@ def test(num, r1, r2):
     eval_steps = 5000
     adaptive = 3 # both adaptive 
     ratio = 0.5
-    defended = True
+    defended = False
     cont = 2
     seed = 2
+    thres = 3
 
     # Make evaluation env
     envv = gym.make("HsjaGames-v0",
@@ -237,30 +205,28 @@ def test(num, r1, r2):
 
     benign = RandomAgent(env=envv)
     
-
     mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rdpolicy(interceptor, adversary, benign, envv, n_eval_episodes=100)
 
-    res = [mean_eps, start_eps, mean_acc]
-
+    # attack success rate
+    lsc = [i[-1] for i in epsilons]
+    suc = np.sum(np.array(lsc) < thres)
+    asr = suc / len(lsc)
+    res = [mean_eps, start_eps, mean_acc, asr]
     z = list(zip(iters,epsilons))
     a = [np.interp(1000, i[0], i[1]) for i in z]
     b = [np.interp(2000, i[0], i[1]) for i in z]
     c = np.mean(a)
     d = np.mean(b)
-    print(res, c, d)
+    print(f'hsja7 | defended {defended}:', res, c, d)
+        
         
     return mean_eps, mean_acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train MA BAGS")
-    parser.add_argument('--timesteps', default=int(4e6), type=int, help="Total number of timesteps to run for")
-    parser.add_argument('--steps', default=int(5e3), type=int, help="Number of steps for each attack episode")
-    parser.add_argument('--adaptive', default=int(2), type=int, help="Controls which agents are adaptive")
-    parser.add_argument('--ratio', default=float(0.5), type=float, help="Probability of next draw being benign")
     parser.add_argument('--defended', default=bool(False), type=bool, help="Adversarially trained model or not")
-    parser.add_argument('--seed', default=int(2), type=int, help="Seed for all PRNG sources")
     parser.add_argument('--train', default=bool(False), type=bool, help="Train or Test")
-    parser.add_argument('--num', default=str("22"), type=str, help="Agents to load")
+    parser.add_argument('--num', default=str("10"), type=str, help="Agents to load")
     parser.add_argument('--r1', default=int(5), type=bool, help="Int reward used")
     parser.add_argument('--r2', default=int(1), type=bool, help="Adv reward used")
     args = parser.parse_args()
@@ -269,10 +235,4 @@ if __name__ == '__main__':
         study = optuna.create_study(directions=['minimize', 'maximize'])
         study.optimize(objective, n_trials=30, gc_after_trial=True)
     else:
-        # profiler = Profiler()
-        # profiler.start()
-
         mean_eps, mean_acc = test(args.num, args.r1, args.r2)
-        
-        # profiler.stop()
-        # profiler.print()

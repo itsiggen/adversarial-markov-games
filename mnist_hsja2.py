@@ -1,28 +1,24 @@
-import argparse
 import gym
 import os
-import pandas as pd
 import numpy as np
-import optuna
-import cProfile
-from tqdm import tqdm
 from agents.rppo import RPPO
 from agents.benign import RandomAgent
 from torchvision import datasets, transforms
-from utils.evaluation import evaluate_rdpolicy, evaluate_rtpolicy
+from utils.evaluation import evaluate_rtpolicy
 from envs.hsja_games import HsjaGames
-from stable_baselines3.common.vec_env import VecNormalize
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 transform=transforms.ToTensor()
-dataset = datasets.MNIST('data', train=False, transform=transform, download=True)
+dataset = datasets.MNIST('./data', train=False, transform=transform, download=True)
 
 eval_steps = 5000
 adaptive = 0 # non-adaptive, just stateful defense 
 ratio = 0.5
 defended = True
+vanilla = True # vanilla defense
 cont = 0
 seed = 2
+thres = 3
 
 # Make evaluation env
 env = gym.make("HsjaGames-v0",
@@ -33,6 +29,7 @@ env = gym.make("HsjaGames-v0",
                defended=defended,
                cont=cont,
                train=False,
+               vanilla=vanilla,
                rint=1,
                radv=1,
                intercept=1)
@@ -44,12 +41,14 @@ benign = RandomAgent(env=env)
 
 mean_rint, std_rint, mean_radv, std_radv, epsilons, iters, mean_eps, start_eps, mean_acc = evaluate_rtpolicy(interceptor, adversary, benign, env, n_eval_episodes=100)
 
-
-res = [mean_eps, start_eps, mean_acc]
-
+# attack success rate
+lsc = [i[-1] for i in epsilons]
+suc = np.sum(np.array(lsc) < thres)
+asr = suc / len(lsc)
+res = [mean_eps, start_eps, mean_acc, asr]
 z = list(zip(iters,epsilons))
 a = [np.interp(1000, i[0], i[1]) for i in z]
 b = [np.interp(2000, i[0], i[1]) for i in z]
 c = np.mean(a)
 d = np.mean(b)
-print('hsjaa2:', res, c, d)
+print(f'hsja2 | defended {defended}:', res, c, d)
